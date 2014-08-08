@@ -16,28 +16,30 @@ def makeurl(*path, **kw):
         parts.append("/")
     parts.append("api/v1")
     parts.extend(map(str, path))
-    print parts
     return os.path.join(*parts)
 
 def index_links(data):
     data.update(_links={
-        "index": makeurl("index", full=True),
-        "venues": makeurl("venues", full=True),
-        "categories": makeurl("categories", full=True),
+        "index": {"href": makeurl("index", full=True)},
+        "venues": {
+            "href": makeurl("venues", full=True),
+            "parameters": ["zip", "key_category", "location", "radius"]
+        },
+        "categories": {"href": makeurl("categories", full=True)},
     })
     return data
 
 def venue_links(data):
     data.update(_links={
-        "self": makeurl("venues", data['id'], full=True),
-        "category": makeurl("categories", data['key_category'], full=True),
+        "self": {"href": makeurl("venues", data['id'], full=True)},
+        "category": {"href": makeurl("categories", data['key_category'], full=True)},
     })
     return data
 
 def category_links(data):
     data.update(_links={
-        "self": makeurl("categories", data['id'], full=True),
-        "venues": makeurl("categories", data['id'], "venues", full=True),
+        "self": {"href": makeurl("categories", data['id'], full=True)},
+        "venues": {"href": makeurl("categories", data['id'], "venues", full=True)},
     })
     return data
 
@@ -80,8 +82,10 @@ def venues(db, id_venue=None, id_category=None):
     })
     return json.dumps(data)
 
+
+@app.route(makeurl())
 @app.route(makeurl('index'))
 def index(db):
-    return addlinks({})
+    return index_links({})
 
 app.run(host='0.0.0.0', port=8080, reloader=True)
