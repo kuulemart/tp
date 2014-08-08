@@ -1,0 +1,5 @@
+foursquare
+psycopg2
+bottle
+bottle-pgsql
+

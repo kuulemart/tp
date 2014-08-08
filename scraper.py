@@ -1,20 +1,48 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import foursquare
-import string
-import json
 from psycopg2 import connect
 from psycopg2.extras import RealDictCursor
+import logging
+import sys, os
+import __main__
+from ConfigParser import SafeConfigParser
 
-class BaseScraper:
+
+class BaseScraper(object):
     source_name = ''
     staging_table = ''
     staging_fields = []
     staging_func = ''
 
+    def __init__(self):
+        if len(sys.argv) > 1:
+            config_file = sys.argv[1]
+        else:
+            script = __main__.__file__
+            path = os.path.dirname(os.path.abspath(script))
+            basename = os.path.splitext(script)[0]
+            config_file = os.path.join(path, "%s.ini" % basename)
+        cp = SafeConfigParser()
+        cp.read(config_file)
+        self.config = dict(cp.items(self.source_name))
+        self.config_logger(self.config)
+        self.log = logging.getLogger(self.source_name)
+        self.db = connect(self.config['db'])
+
+    def config_logger(self, config):
+        params = {}
+        if 'log_file' in config:
+            params['filename'] = config['log_file']
+        else:
+            params['stream'] = sys.stdout
+        config.setdefault('log_level', 'info')
+        params['level'] = getattr(logging, config['log_level'].upper())
+        if 'log_format' in config:
+            params['format'] = config['log_format']
+        logging.basicConfig(**params)
+
     def callproc(self, name, params):
-        print "calling: %s, %s" % (name, params)
+        self.log.debug("calling: %s, %s" % (name, params))
         cur = self.db.cursor(cursor_factory=RealDictCursor)
         cur.callproc(name, params)
         return cur.fetchall()
@@ -39,8 +67,7 @@ class BaseScraper:
     def get_iter(self):
         raise NotImplementedError
 
-    def run(self, db):
-        self.db = db
+    def run(self):
         for param in self.get_iter():
             try:
                 self.init_staging()
@@ -66,76 +93,10 @@ class BaseVenueScraper(BaseScraper):
         categories = self.callproc(self.category_func, [self.source_name])
         for area in self.callproc(self.area_func, [self.source_name]):
             for category in categories:
-                print category
-                print area
+                self.log.debug('category: %s' % category)
+                self.log.debug('area: %s' % area)
                 yield {
                     "area": area['value'],
                     "category": category['value'],
                     "key_category": category['key_category']
                 }
-
-
-
-# Foursquare venue scraper
-
-class FSVenueScraper(BaseVenueScraper):
-    source_name = '4sq'
-
-    def get_cats(self):
-        def proc(data, cats={}):
-            for cat in data.get('categories', []):
-                cats[cat['name']] = proc(cat, {'id': cat['id']})
-            return cats
-        return proc(self.fs.venues.categories())
-
-    def get_cat_id(self, cat):
-        cats = self._cats
-        for name in cat:
-            cats = cats[name]
-        return cats['id']
-
-    def transform_data(self, data, **kw):
-        for venue in data.get('venues', []):
-            row = dict.fromkeys(self.staging_fields)
-            loc = venue['location']
-            row.update(
-                id=venue['id'],
-                name=venue['name'],
-                lat=loc['lat'],
-                lng=loc['lng'],
-                zip=loc['postalCode'],
-                address=' '.join(loc.get('formattedAddress', [])),
-                phone=venue['contact'].get('formattedPhone')
-            )
-            row.update(kw)
-            yield row
-
-    def __init__(self, client_id, client_secret):
-        self.fs = foursquare.Foursquare(
-            client_id=client_id,
-            client_secret=client_secret
-        )
-        # build category cache
-        self._cats = self.get_cats()
-
-    def get_data(self, area, category, key_category):
-        area_dict = json.loads(area)
-        category_list = json.loads(category)
-        print area_dict
-        print category_list
-        params = dict(intent='browse')
-        params.update(area_dict)
-        params.update(categoryId=self.get_cat_id(category_list))
-        data = self.fs.venues.search(params=params)
-        return self.transform_data(data, key_category=key_category)
-
-
-if __name__ == '__main__':
-    # create scraper instance
-    CLIENT_ID = 'LNTZ2MKNY53OD00ZLT5QUEXRJHF3NR0FZ0B5KAPJJGS2CVGO'
-    CLIENT_SECRET = 'P3I0PMY3IABWAEDGS1G4J24YAOBYXCUYISP0YYT4ZNE0RHEN'
-    DB = connect('dbname=tp')
-
-    # run scraper
-    scraper = FSVenueScraper(CLIENT_ID, CLIENT_SECRET)
-    scraper.run(DB)

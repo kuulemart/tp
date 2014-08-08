@@ -1,16 +1,14 @@
 /*
     DATA
 */
-\set ON_ERROR_STOP
-\connect tp
 
-# clean tables
+-- clean tables
 
 truncate table venue.category;
 truncate table scraper.venue_category;
 truncate table scraper.venue_area;
 
-# insert data
+-- insert data
 
 insert into venue.category(name)
     values (E'Cafe'),

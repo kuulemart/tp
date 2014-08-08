@@ -1,61 +1,27 @@
 \set ON_ERROR_STOP
 
-drop database tp;
+\set user scraper
+\set database tp
 
-create database tp with encoding 'utf-8';
+drop database if exists :database;
+drop user if exists :user;
 
-\connect tp
+create database :database with encoding 'utf-8';
+create user :user with password 'salakala';
+
+\connect :database
 
 create extension postgis;
 
-create schema staging;
-
-create table staging.venue
-( id text not null primary key
-, key_category bigint not null
-, name text not null
-, lat double precision not null
-, lng double precision not null
-, zip text not null
-, address text
-, phone text
-);
-
-create schema venue;
-
-create table venue.venue
-( id bigserial primary key
-, source text not null
-, source_id text not null
-, key_category bigint not null
-, name text not null
-, loc geometry not null
-, zip text not null
-, address text
-, phone text
-);
-
-create table venue.category
-( id bigserial primary key
-, name text not null
-);
-
-create schema scraper;
-
-create table scraper.venue_category
-( id bigserial primary key
-, source text not null
-, key_category bigint not null
-, value text not null
-);
-
-create table scraper.venue_area
-( id bigserial primary key
-, source text not null
-, name text not null
-, value text not null
-);
-
-
+\i tables.sql
 \i data.sql
 \i functions.sql
+
+-- grant rights to scraper user
+
+grant connect on database :database to :user;
+grant usage on schema staging to :user;
+grant all on all tables in schema staging to :user;
+grant execute on all functions in schema staging to :user;
+grant usage on schema scraper to :user;
+grant execute on all functions in schema scraper to :user;
