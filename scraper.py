@@ -2,57 +2,77 @@
 # -*- coding: utf-8 -*-
 
 import foursquare
-import collections
+import string
+import json
 from psycopg2 import connect
-
+from psycopg2.extras import RealDictCursor
 
 class BaseScraper:
     source_name = ''
-    staging_stable = 'staging.venue'
-    staging_fields = [
-        'id', 'category', 'name', 'lat', 'lng', 'zip', 'address', 'phone'
-    ]
-    staging_func = 'staging.process_venue'
+    staging_table = ''
+    staging_fields = []
+    staging_func = ''
+
+    def callproc(self, name, params):
+        print "calling: %s, %s" % (name, params)
+        cur = self.db.cursor(cursor_factory=RealDictCursor)
+        cur.callproc(name, params)
+        return cur.fetchall()
 
     def insert_staging_data(self, data):
         cur = self.db.cursor()
-        sql = 'insert into %s' % self.staging_stable
+        sql = 'insert into %s' % self.staging_table
         sql += '(%s)' % ', '.join(self.staging_fields)
         sql += 'values(%s)' % ', '.join('%%(%s)s'%f for f in self.staging_fields)
         cur.executemany(sql, data)
 
     def init_staging(self):
         cur = self.db.cursor()
-        cur.execute('truncate table %s' % self.staging_stable)
+        cur.execute('truncate table %s' % self.staging_table)
 
     def process_staging(self):
-        cur = self.db.cursor()
-        cur.callproc(self.staging_func, [self.source_name])
+        self.callproc(self.staging_func, [self.source_name])
 
-    def get_data(self, area, category):
+    def get_data(self, **params):
         raise NotImplementedError
 
-    def run(self, db, area, category_map):
+    def get_iter(self):
+        raise NotImplementedError
+
+    def run(self, db):
         self.db = db
-        self.category_map = category_map
-        for cat in category_map:
+        for param in self.get_iter():
             try:
                 self.init_staging()
-                data = self.get_data(area, cat)
+                data = self.get_data(**param)
                 self.insert_staging_data(data)
                 self.process_staging()
             except:
-                self.db_conn.rollback()
+                self.db.rollback()
                 raise
-            self.db_conn.commit()
+            self.db.commit()
 
 
 class BaseVenueScraper(BaseScraper):
-    staging_stable = 'staging.venue'
+    staging_table = 'staging.venue'
     staging_fields = [
-        'id', 'category', 'name', 'lat', 'lng', 'zip', 'address', 'phone'
+        'id', 'key_category', 'name', 'lat', 'lng', 'zip', 'address', 'phone'
     ]
     staging_func = 'staging.process_venue'
+    area_func = 'scraper.get_venue_area'
+    category_func = 'scraper.get_venue_category'
+
+    def get_iter(self):
+        categories = self.callproc(self.category_func, [self.source_name])
+        for area in self.callproc(self.area_func, [self.source_name]):
+            for category in categories:
+                print category
+                print area
+                yield {
+                    "area": area['value'],
+                    "category": category['value'],
+                    "key_category": category['key_category']
+                }
 
 
 
@@ -98,13 +118,16 @@ class FSVenueScraper(BaseVenueScraper):
         # build category cache
         self._cats = self.get_cats()
 
-    def get_data(self, area, category):
+    def get_data(self, area, category, key_category):
+        area_dict = json.loads(area)
+        category_list = json.loads(category)
+        print area_dict
+        print category_list
         params = dict(intent='browse')
-        params.update(area)
-        cat_4sq = self.category_map[category]
-        params.update(categoryId=self.get_cat_id(cat_4sq))
+        params.update(area_dict)
+        params.update(categoryId=self.get_cat_id(category_list))
         data = self.fs.venues.search(params=params)
-        return self.transform_data(data, category=category)
+        return self.transform_data(data, key_category=key_category)
 
 
 if __name__ == '__main__':
@@ -113,20 +136,6 @@ if __name__ == '__main__':
     CLIENT_SECRET = 'P3I0PMY3IABWAEDGS1G4J24YAOBYXCUYISP0YYT4ZNE0RHEN'
     DB = connect('dbname=tp')
 
-    scraper = FSVenueScraper(DB, CLIENT_ID, CLIENT_SECRET)
-
-    # define scraping area:
-    #   SF bay area using bounding box
-    area = {
-        'ne': '38.864300,-121.208199',
-        'sw': '36.893089,-123.533684'
-    }
-
-    # category map for converting internal category to 4sq category hierarchy
-    category_map = {
-        'Cafe': (u'Food', u'Café'),
-        'Gym': (u'Shop & Service', u'Gym / Fitness Center')
-    }
-
-    # run scraper for all categories in area
-    scraper.run(area=area, category_map=category_map)
+    # run scraper
+    scraper = FSVenueScraper(CLIENT_ID, CLIENT_SECRET)
+    scraper.run(DB)
