@@ -1,53 +1,48 @@
+"""
+Base classes for scrapers
+"""
 # -*- coding: utf-8 -*-
 
 from psycopg2 import connect
 from psycopg2.extras import RealDictCursor
-import logging
-import sys, os
-import __main__
-from ConfigParser import SafeConfigParser
-
+from util import read_config, config_logging
 
 class BaseScraper(object):
+    """
+    Base scraper class. Provides functionality for config and log management
+    and extendable logic for scraping.
+
+    Overwrite method get_work to return sequence of params to loop over and
+    pass to get_data.
+
+    Overwrite get_data to return scraped data ready to insert to database
+    """
     source_name = ''
     staging_table = ''
     staging_fields = []
     staging_func = ''
 
     def __init__(self):
-        if len(sys.argv) > 1:
-            config_file = sys.argv[1]
-        else:
-            script = __main__.__file__
-            path = os.path.dirname(os.path.abspath(script))
-            basename = os.path.splitext(script)[0]
-            config_file = os.path.join(path, "%s.ini" % basename)
-        cp = SafeConfigParser()
-        cp.read(config_file)
-        self.config = dict(cp.items(self.source_name))
-        self.config_logger(self.config)
-        self.log = logging.getLogger(self.source_name)
-        self.db = connect(self.config['db'])
-
-    def config_logger(self, config):
-        params = {}
-        if 'log_file' in config:
-            params['filename'] = config['log_file']
-        else:
-            params['stream'] = sys.stdout
-        config.setdefault('log_level', 'info')
-        params['level'] = getattr(logging, config['log_level'].upper())
-        if 'log_format' in config:
-            params['format'] = config['log_format']
-        logging.basicConfig(**params)
+        self.config = read_config(self.source_name)
+        self.log = config_logging(self.config).getLogger(self.source_name)
+        self.db = None
 
     def callproc(self, name, params):
-        self.log.debug("calling: %s, %s" % (name, params))
-        cur = self.db.cursor(cursor_factory=RealDictCursor)
+        """
+        Helper function for db function calling
+        """
+        self.log.debug("calling function: %r with params: %s" % (name, params))
+        cur = self.db.cursor()
         cur.callproc(name, params)
         return cur.fetchall()
 
     def insert_staging_data(self, data):
+        """
+        Inserts data to staging table. Staging table and fields are defined in
+        staging_table and staging_fields attributes. Data dict should contain
+        all fields needed for staging table.
+        """
+        self.log.debug("inserting to table: %s" % self.staging_table)
         cur = self.db.cursor()
         sql = 'insert into %s' % self.staging_table
         sql += '(%s)' % ', '.join(self.staging_fields)
@@ -55,32 +50,67 @@ class BaseScraper(object):
         cur.executemany(sql, data)
 
     def init_staging(self):
+        """
+        Cleans staging table
+        """
+        self.log.debug("truncating table: %s" % self.staging_table)
         cur = self.db.cursor()
         cur.execute('truncate table %s' % self.staging_table)
 
     def process_staging(self):
+        """
+        Calls staging db function, defined in staging_func attribute
+        """
         self.callproc(self.staging_func, [self.source_name])
 
-    def get_data(self, **params):
+    def get_work(self):
+        """
+        Overwrite function to return sequence of params to pass to get_data
+        """
         raise NotImplementedError
 
-    def get_iter(self):
+    def get_data(self, **params):
+        """
+        Overwrite to return scraped data. Function gets params from sequence
+        returned from get_work
+        """
         raise NotImplementedError
 
     def run(self):
-        for param in self.get_iter():
-            try:
+        """
+        Gets sequence of work params. Iterates over sequence and in each
+        iteration cleans staging stable, gets data, inserts it to staging table
+        and calls staging function
+        """
+        try:
+            self.db = connect(self.config['db'], cursor_factory=RealDictCursor)
+
+            for params in self.get_work():
                 self.init_staging()
-                data = self.get_data(**param)
+                data = self.get_data(**params)
                 self.insert_staging_data(data)
                 self.process_staging()
-            except:
+                self.db.commit()
+
+        except Exception as e:
+            if self.db:
                 self.db.rollback()
-                raise
-            self.db.commit()
+            self.log.fatal(e)
+            raise
+
+        finally:
+            if self.db:
+                self.db.close()
+
 
 
 class BaseVenueScraper(BaseScraper):
+    """
+    Base class for venue scrapers.
+
+    Defines staging tables and function for venues and functions to get areas
+    and categories to scrape venues from.
+    """
     staging_table = 'staging.venue'
     staging_fields = [
         'id', 'key_category', 'name', 'lat', 'lng', 'zip', 'address', 'phone'
@@ -89,12 +119,14 @@ class BaseVenueScraper(BaseScraper):
     area_func = 'scraper.get_venue_area'
     category_func = 'scraper.get_venue_category'
 
-    def get_iter(self):
+    def get_work(self):
+        """
+        Reads source categories and areas from db. Returns sequence of params
+        for every category in every area.
+        """
         categories = self.callproc(self.category_func, [self.source_name])
         for area in self.callproc(self.area_func, [self.source_name]):
             for category in categories:
-                self.log.debug('category: %s' % category)
-                self.log.debug('area: %s' % area)
                 yield {
                     "area": area['value'],
                     "category": category['value'],

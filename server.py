@@ -1,10 +1,20 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+RESTful API server
+"""
+
+import os
+import json
 import bottle
 import bottle_pgsql
-import json
-import os
+from util import read_config, config_logging
 
+config = read_config("api")
+log = config_logging(config)
 app = bottle.Bottle()
-plugin = bottle_pgsql.Plugin('dbname=tp')
+plugin = bottle_pgsql.Plugin(config.db)
 app.install(plugin)
 
 def makeurl(*path, **kw):
@@ -88,4 +98,4 @@ def venues(db, id_venue=None, id_category=None):
 def index(db):
     return index_links({})
 
-app.run(host='0.0.0.0', port=8080, reloader=True)
+app.run(host=config.address, port=config.port, reloader=config.reloader)
