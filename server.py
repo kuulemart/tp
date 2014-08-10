@@ -8,8 +8,7 @@ RESTful API server
 import os
 import json
 import bottle
-#import bottle_pgsql
-from util import read_config, config_logging, connection_pool
+from util import read_config, config_logging, connection_pool, AttrDict
 
 
 ### setup
@@ -18,9 +17,7 @@ from util import read_config, config_logging, connection_pool
 config = read_config("api")
 log = config_logging(config)
 app = bottle.Bottle()
-#plugin = bottle_pgsql.Plugin(config.db)
-#app.install(plugin)
-db = connection_pool(1, int(config.get("max_connections", "10")), config.db)
+db = connection_pool(1, int(config.max_connections or 10), config.db)
 
 def url(*path, **kw):
     parts = []
@@ -89,22 +86,23 @@ def links(items, name, item_linker):
 
 
 class Query:
-    def __init__(self, sql):
-        self._sql = sql
-        self._where = []
+    def __init__(self, db, sql):
+        self.db = db
+        self.sql = sql
+        self.parts = AttrDict.fromkeys(["where"], [])
         self.map = {}
 
     def where(self, where, condition=True):
         if condition:
-            self._where.append(where)
+            self.parts.where.append(where)
         return self
 
-    def __call__(self, db, *params):
-        sql = self._sql
-        if self.where:
-            sql += (' where %s' % ' and '.join(self.where))
-        db.execute(sql, params)
-        result = db.fetchall()
+    def __call__(self, *p, **kw):
+        sql = self.sql
+        if self.parts.where:
+            sql += (' where %s' % ' and '.join(self.parts.where))
+        self.db.execute(sql, p or kw)
+        result = self.db.fetchall()
         map(lambda r: r.update((k, f(r[k])) for k,f in self.map.items()), result)
         return result
 
@@ -116,9 +114,9 @@ class Query:
 @app.route(url('categories/<id:int>'))
 @db
 def categories(db, id=None):
-    q = Query("select id, name from venue.category")
+    q = Query(db, "select id, name from venue.category")
     q.where("id = %s", id)
-    return json.dumps(links(q(db, id), "categories", category_links))
+    return json.dumps(links(q(id), "categories", category_links))
 
 
 @app.route(url('venues'))
@@ -134,12 +132,12 @@ def venues(db, id_venue=None, id_category=None, zip=None):
         from venue.venue v
         join venue.category c on v.key_category = c.id
     """
-    q = Query(sql)
-    q.where("v.id = %s", id_venue)
-    q.where("c.id = %s", id_category)
-    q.where("v.zip = %s", zip)
+    q = Query(db, sql)
+    q.where("v.id = %(id_venue)s", id_venue)
+    q.where("c.id = %(id_category)s", id_category)
+    q.where("v.zip = %(zip)s", zip)
     q.map['location'] = json.loads
-    venues = q(db, id_venue or id_category or zip)
+    venues = q(id_venue=id_venue, id_category=id_category, zip=zip)
     return json.dumps(links(venues, "venues", venue_links))
 
 
@@ -150,7 +148,7 @@ def zips(db, zip=None):
     if zip:
         zips = [{"zip": zip}]
     else:
-        zips = Query("select distinct zip from venue.venue")(db)
+        zips = Query(db, "select distinct zip from venue.venue")()
     return json.dumps(links(zips, "zips", zip_links))
 
 
