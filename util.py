@@ -49,3 +49,28 @@ def config_logging(config):
     logging.basicConfig(**params)
     return logging
 
+import psycopg2
+import psycopg2.pool
+import psycopg2.extras
+
+def connection_pool(*p, **kw):
+    _kw = dict(cursor_factory=psycopg2.extras.RealDictCursor)
+    _kw.update(kw)
+    pool = psycopg2.pool.ThreadedConnectionPool(*p, **_kw)
+    def wrapper(func):
+        def wrapped(*p, **kw):
+            conn = pool.getconn()
+            kw['db'] = conn.cursor()
+            try:
+                result = func(*p, **kw)
+                conn.commit()
+                return result
+            except:
+                conn.rollback()
+                raise
+            finally:
+                pool.putconn(conn)
+        return wrapped
+    return wrapper
+
+
