@@ -1,5 +1,9 @@
 import sys, os, logging, __main__
 from ConfigParser import SafeConfigParser
+import psycopg2
+import psycopg2.pool
+import psycopg2.extras
+
 
 class AttrDict(dict):
     def __getattr__(self, name):
@@ -49,9 +53,6 @@ def config_logging(config):
     logging.basicConfig(**params)
     return logging
 
-import psycopg2
-import psycopg2.pool
-import psycopg2.extras
 
 def connection_pool(*p, **kw):
     _kw = dict(cursor_factory=psycopg2.extras.RealDictCursor)

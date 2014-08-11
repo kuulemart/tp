@@ -44,7 +44,8 @@ $$
     -- transform and insert from staging
     insert into venue.venue
         (source, source_id, key_category, name, loc, zip, address, phone)
-    select $1, id, key_category, name, ST_MakePoint(lat, lng), zip, address, phone
+    select $1, id, key_category, name
+         , ST_SetSRID(ST_Point(lng, lat), 4326), zip, address, phone
     from staging.venue;
 $$
 language sql security definer;
