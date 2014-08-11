@@ -87,10 +87,16 @@ class Linker:
             "index": href(fq_url(ep.index)),
             "venues": href(
                 fq_url(ep.venues),
-                params=["zip", "key_category", "location", "radius"]
+                params=["zip", "key_category", "location", "radius", "limit"]
             ),
-            "categories": href(fq_url(ep.categories)),
-            "zips": href(fq_url(ep.zips))
+            "categories": href(
+                fq_url(ep.categories),
+                params=["limit"]
+            ),
+            "zips": href(
+                fq_url(ep.zips),
+                params=["limit"]
+            )
         },
         "zips": lambda item: {
             "self": href(fq_url(ep.zip, id_zip=item['zip'])),
@@ -207,6 +213,13 @@ def categories_handler(db, id_category=None):
         where 1 = 1
     """)
     q.add("and id = %(id)s", id_category)
+    # limit results
+    if not id_category:
+        params = bottle.request.query
+        limit = int(params.get('limit', 100))
+        q.add("limit %(limit)s", limit > 0)
+        q.params.update(limit=limit)
+
     return json.dumps(
         linker.categories(q(id=id_category), id_category)
     )
@@ -253,15 +266,16 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
             radius=float(params['radius'])
         )
     # limit results
-    limit = int(params.get('limit', 100))
-    q.add("limit %(limit)s", limit > 0)
+    if not id_venue:
+        limit = int(params.get('limit', 100))
+        q.add("limit %(limit)s", limit > 0)
+        q.params.update(limit=limit)
     # convert location string to json
     q.map['location'] = json.loads
     # return linked data as json
     return json.dumps(
         linker.venues(
             q(
-                limit=limit,
                 id_venue=id_venue,
                 id_category=id_category,
                 id_zip=id_zip
@@ -277,9 +291,15 @@ def zips_handler(db, id_zip=None):
     if id_zip:
         zips = [{"zip": id_zip}]
     else:
-        zips = Query(db, """
+        q = Query(db, """
             select distinct zip from venue.venue
-        """)()
+        """)
+        # limit results
+        params = bottle.request.query
+        limit = int(params.get('limit', 100))
+        q.add("limit %(limit)s", limit > 0)
+        q.params.update(limit=limit)
+        zips = q()
     return json.dumps(
         linker.zips(zips, id_zip)
     )

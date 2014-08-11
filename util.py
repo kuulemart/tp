@@ -8,6 +8,9 @@ from bottle import HTTPResponse, HTTPError
 
 
 class AttrDict(dict):
+    """
+    Extended dict with items accessible as attributes
+    """
     def __getattr__(self, name):
         return self.get(name)
 
