@@ -56,8 +56,14 @@ def fq_url(*path, **subst):
 def href(url, **kw):
     return dict(kw, href=url)
 
+def create_linker(func):
+    def linker(item):
+        item.setdefault("_links", {}).update(func(item))
+        return item
+    return linker
+
 def index_links(data):
-    data.setdefault("_links", {}).update(
+    linker = create_linker(lambda item: dict(
         self = href(bottle.request.url),
         index = href(fq_url(ep.index)),
         venues = href(
@@ -66,39 +72,53 @@ def index_links(data):
         ),
         categories = href(fq_url(ep.categories)),
         zips = href(fq_url(ep.zips))
-    )
-    return data
+    ))
+    return linker(data)
+    #data.setdefault("_links", {}).update(
+    #    self = href(bottle.request.url),
+    #    index = href(fq_url(ep.index)),
+    #    venues = href(
+    #        fq_url(ep.venues),
+    #        params=["zip", "key_category", "location", "radius"]
+    #    ),
+    #    categories = href(fq_url(ep.categories)),
+    #    zips = href(fq_url(ep.zips))
+    #)
+    #return data
 
-def venue_links(data):
-    data.setdefault("_links", {}).update(
-        self = href(fq_url(ep.venue, id_venue=data['id'])),
-        category = href(fq_url(ep.category, id_category=data['key_category'])),
-        zip = href(fq_url(ep.zip, id_zip=data['zip']))
-    )
-    return data
+def venue_links(data, single=True):
+    linker = create_linker(lambda item: dict(
+        self = href(fq_url(ep.venue, id_venue=item['id'])),
+        category = href(fq_url(ep.category, id_category=item['key_category'])),
+        zip = href(fq_url(ep.zip, id_zip=item['zip']))
+    ))
+    if not single:
+        return index_links({"venues": map(linker, data)})
+    if isinstance(data, (list, tuple)):
+        data = data[0]
+    return index_links(linker(data))
 
-def category_links(data):
-    data.setdefault("_links", {}).update(
-        self = href(fq_url(ep.category, id_category=data['id'])),
-        category_venues = href(fq_url(ep.category_venues, id_category=data['id']))
-    )
-    return data
+def category_links(data, single=True):
+    linker = create_linker(lambda item: dict(
+        self = href(fq_url(ep.category, id_category=item['id'])),
+        category_venues = href(fq_url(ep.category_venues, id_category=item['id']))
+    ))
+    if not single:
+        return index_links({"categories": map(linker, data)})
+    if isinstance(data, (list, tuple)):
+        data = data[0]
+    return index_links(linker(data))
 
-def zip_links(data):
-    data.setdefault("_links", {}).update(
-        self = href(fq_url(ep.zip, id_zip=data['zip'])),
-        zip_venues = href(fq_url(ep.zip_venues, id_zip=data['zip']))
-    )
-    return data
-
-def links(data, item_linker, name=None):
-    return index_links(
-        {name: map(item_linker, data)} if name
-        else item_linker(data[0])
-    )
-
-def if_none(value, if_none):
-    return if_none if value is None else None
+def zip_links(data, single=True):
+    linker = create_linker(lambda item: dict(
+        self = href(fq_url(ep.zip, id_zip=item['zip'])),
+        zip_venues = href(fq_url(ep.zip_venues, id_zip=item['zip']))
+    ))
+    if not single:
+        return index_links({"zips": map(linker, data)})
+    if isinstance(data, (list, tuple)):
+        data = data[0]
+    return index_links(linker(data))
 
 
 ### query builder
@@ -147,10 +167,7 @@ def categories(db, id_category=None):
     """)
     q.add("and id = %(id)s", id_category)
     return json.dumps(
-        links(
-            q(id=id_category),
-            category_links,
-            if_none(id_category, "categories"))
+        category_links(q(id=id_category), id_category)
     )
 
 
@@ -205,7 +222,7 @@ def venues(db, id_venue=None, id_category=None, id_zip=None):
     q.map['location'] = json.loads
     print q.get_sql(), q.params
     return json.dumps(
-        links(q(), venue_links, if_none(id_venue, "venues"))
+        venue_links(q(), id_venue)
     )
 
 
@@ -219,7 +236,9 @@ def zips(db, id_zip=None):
         zips = Query(db, """
             select distinct zip from venue.venue
         """)()
-    return json.dumps(links(zips, zip_links, if_none(id_zip, "zips")))
+    return json.dumps(
+        zip_links(zips, id_zip)
+    )
 
 
 @app.route(ep.root)
@@ -234,5 +253,6 @@ def index():
 app.run(
     host=config.address or '0.0.0.0',
     port=config.port or '8080',
-    reloader=config.reloader
+    reloader=config.reloader,
+    debug=True
 )
