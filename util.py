@@ -1,8 +1,10 @@
 import sys, os, logging, __main__
+import inspect
 from ConfigParser import SafeConfigParser
 import psycopg2
 import psycopg2.pool
 import psycopg2.extras
+from bottle import HTTPResponse, HTTPError
 
 
 class AttrDict(dict):
@@ -54,17 +56,19 @@ def config_logging(config):
     return logging
 
 
-def connection_pool(*p, **kw):
-    _kw = dict(cursor_factory=psycopg2.extras.RealDictCursor)
-    _kw.update(kw)
-    pool = psycopg2.pool.ThreadedConnectionPool(*p, **_kw)
+def pool_wrapper(pool, keyword='db', autocommit=True):
     def wrapper(func):
+        args = inspect.getargspec(func)[0]
+        if keyword not in args:
+            return func
+
         def wrapped(*p, **kw):
             conn = pool.getconn()
-            kw['db'] = conn.cursor()
+            kw[keyword] = conn.cursor()
             try:
                 result = func(*p, **kw)
-                conn.commit()
+                if autocommit:
+                    conn.commit()
                 return result
             except:
                 conn.rollback()
@@ -75,3 +79,71 @@ def connection_pool(*p, **kw):
     return wrapper
 
 
+class PgSQLPoolPlugin(object):
+    '''
+    This plugin passes a pgsql database handle from pool to route callbacks
+    that accept a `db` keyword argument. If a callback does not expect
+    such a parameter, no connection is made.
+    '''
+
+    name = 'pgsqlpool'
+
+    def __init__(self, pool, keyword='db', autocommit=True):
+        self.pool = pool
+        self.keyword = keyword
+        self.autocommit = autocommit
+
+    def setup(self, app):
+        '''
+        Make sure that other installed plugins don't affect the same keyword argument.
+        '''
+        for other in app.plugins:
+            if not isinstance(other, PgSQLPoolPlugin):
+                continue
+            if other.keyword == self.keyword:
+                raise PluginError("Found another pgsqlpool plugin with conflicting settings (non-unique keyword).")
+
+    def apply(self, callback, context):
+        # Override global configuration with route-specific values.
+        conf = context['config'].get(self.name) or {}
+        autocommit = conf.get('autocommit', self.autocommit)
+        keyword = conf.get('keyword', self.keyword)
+
+        # Test if the original callback accepts a 'db' keyword.
+        # Ignore it if it does not need a database handle.
+        args = inspect.getargspec(context['callback'])[0]
+        if keyword not in args:
+            return callback
+
+        def wrapper(*args, **kwargs):
+            # Connect to the database
+            conn = None
+            try:
+                conn = self.pool.getconn()
+                cur = conn.cursor()
+            except HTTPResponse, e:
+                raise HTTPError(500, "Database Error", e)
+
+            # Add the connection handle as a keyword argument.
+            kwargs[keyword] = cur
+
+            try:
+                rv = callback(*args, **kwargs)
+                if autocommit:
+                    conn.commit()
+            except psycopg2.ProgrammingError, e:
+                con.rollback()
+                raise HTTPError(500, "Database Error", e)
+            except HTTPError, e:
+                raise
+            except HTTPResponse, e:
+                if autocommit:
+                    conn.commit()
+                raise
+            finally:
+                if conn:
+                    self.pool.putconn(conn)
+            return rv
+
+        # Replace the route callback with the wrapped one.
+        return wrapper

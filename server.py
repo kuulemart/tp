@@ -11,9 +11,10 @@ import urllib
 import json
 import bottle
 import util
+import psycopg2.pool
 
 
-### endpoints
+### API endpoints
 
 
 api_v1 = '/api/v1'
@@ -35,14 +36,26 @@ ep = util.AttrDict(
 
 config = util.read_config("api")
 log = util.config_logging(config).getLogger("server")
+# connection pool
+pool = psycopg2.pool.ThreadedConnectionPool(
+    minconn=1,
+    maxconn=int(config.max_connections or 10),
+    dsn=config.db,
+    cursor_factory=psycopg2.extras.RealDictCursor
+)
+# init bottle
 app = bottle.Bottle()
-db = util.connection_pool(1, int(config.max_connections or 10), config.db)
+app.install(util.PgSQLPoolPlugin(pool))
 
 
 ### hypermedia helpers
 
 
 def fq_url(*path, **subst):
+    """
+    Builds fully qualified url. Uses bottle request object for scheme and loc
+    info and works only within request
+    """
     return re.sub(
         r'<([^:>]+)[^>]*>',
         r'{\1}',
@@ -53,10 +66,21 @@ def fq_url(*path, **subst):
             os.path.join(*path))
     ).format(**subst)
 
-def href(url, **kw):
-    return dict(kw, href=url)
+
+def href(url, **attrs):
+    """
+    Builds hypermedia reference with href url and attributes
+    """
+    return dict(attrs, href=url)
+
 
 class Linker:
+    """
+    Decorates data with hypermedia links
+    """
+
+    # link definitions:
+    #   dict with key = data type and value = function returning dict with links
     _links = {
         "index": lambda item: {
             "self": href(bottle.request.url),
@@ -84,17 +108,27 @@ class Linker:
     }
 
     def _create_linker(self, func):
+        """
+        Returns linker function that updates "_links" in data dict with result
+        of given link function
+        """
         def linker(item):
             item.setdefault("_links", {}).update(func(item))
             return item
         return linker
 
     def index(self, data):
+        """
+        Main index links, added to every result
+        """
         linker = self._create_linker(self._links["index"])
         return linker(data)
 
     def __getattr__(self, name):
-        def func(data={}, single=True):
+        """
+        Dynamic linker function
+        """
+        def func(data, single=True):
             linker = self._create_linker(self._links[name])
             if not single:
                 return self.index({name: map(linker, data)})
@@ -110,22 +144,45 @@ linker = Linker()
 
 
 class Query:
+    """
+    SQL query builder
+
+    Builds sql from given parts
+    """
+
     def __init__(self, db, sql=None, params=None):
+        """
+        db - database cursor object
+        sql - initial sql part
+        params - initial params value
+        """
         self.db = db
         self.sql = []
+        # result row map. when col name is in map, value is replaced with result
+        # of mapping function
         self.map = {}
+        # query parameters
         self.params = util.AttrDict(params or {})
         self.add(sql, sql)
 
     def add(self, sql, condition=True):
+        """
+        Adds SQL part if condition is True
+        """
         if condition:
             self.sql.append(sql)
         return self
 
     def get_sql(self):
+        """
+        Returns SQL string
+        """
         return "\n".join(self.sql)
 
     def __call__(self, **kw):
+        """
+        Execute SQL with self.params + call params and map result values
+        """
         params = {}
         params.update(self.params)
         params.update(kw)
@@ -143,7 +200,6 @@ class Query:
 
 @app.route(ep.categories)
 @app.route(ep.category)
-@db
 def categories_handler(db, id_category=None):
     q = Query(db, """
         select id, name
@@ -160,7 +216,6 @@ def categories_handler(db, id_category=None):
 @app.route(ep.venue)
 @app.route(ep.category_venues)
 @app.route(ep.zip_venues)
-@db
 def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
     q = Query(db, """
         select v.id, v.name, v.zip, v.address, v.phone, v.key_category
@@ -173,25 +228,19 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
     q.add("and v.id = %(id_venue)s", id_venue)
     q.add("and c.id = %(id_category)s", id_category)
     q.add("and v.zip = %(id_zip)s", id_zip)
-    q.params.update(
-        id_venue=id_venue,
-        id_category=id_category,
-        id_zip=id_zip
-    )
-    print bottle.request.query.allitems()
 
-    v = bottle.request.query.get("zip")
-    if v:
+    params = bottle.request.query
+    # zip
+    if 'zip' in params:
         q.add("and v.zip = any(%(zip_arr)s)")
-        q.params["zip_arr"] = v.split(',')
-    v = bottle.request.query.get("key_category")
-    if v:
+        q.params["zip_arr"] = params['zip'].split(',')
+    # category
+    if 'key_category' in params:
         q.add("and v.key_category = any(%(key_category_arr)s)")
-        q.params["key_category_arr"] = map(int, v.split(','))
-    l = bottle.request.query.get("location")
-    r = bottle.request.query.get("radius")
-    if l and r:
-        location = l.split(',')
+        q.params["key_category_arr"] = map(int, params['key_category'].split(','))
+    # location & radius
+    if 'location' in params and 'radius' in params:
+        location = params['location'].split(',')
         q.add("""
             and ST_Distance_Sphere(
                     v.loc,
@@ -201,18 +250,29 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
         q.params.update(
             lng=float(location[0]),
             lat=float(location[1]),
-            radius=float(r)
+            radius=float(params['radius'])
         )
-
+    # limit results
+    limit = int(params.get('limit', 100))
+    q.add("limit %(limit)s", limit > 0)
+    # convert location string to json
     q.map['location'] = json.loads
+    # return linked data as json
     return json.dumps(
-        linker.venues(q(), id_venue)
+        linker.venues(
+            q(
+                limit=limit,
+                id_venue=id_venue,
+                id_category=id_category,
+                id_zip=id_zip
+            ),
+            id_venue
+        )
     )
 
 
 @app.route(ep.zips)
 @app.route(ep.zip)
-@db
 def zips_handler(db, id_zip=None):
     if id_zip:
         zips = [{"zip": id_zip}]
