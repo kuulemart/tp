@@ -6,9 +6,28 @@ RESTful API server
 """
 
 import os
+import re
+import urllib
 import json
 import bottle
 import util
+
+
+### endpoints
+
+
+api_v1 = '/api/v1'
+ep = util.AttrDict(
+    index = os.path.join(api_v1, 'index'),
+    categories = os.path.join(api_v1, 'categories'),
+    category = os.path.join(api_v1, 'categories/<id_category:int>'),
+    venues = os.path.join(api_v1, 'venues'),
+    venue = os.path.join(api_v1, 'venues/<id_venue:int>'),
+    category_venues = os.path.join(api_v1, 'categories/<id_category:int>/venues'),
+    zip_venues = os.path.join(api_v1, 'zips/<id_zip>/venues'),
+    zips = os.path.join(api_v1, 'zips'),
+    zip = os.path.join(api_v1, 'zips/<id_zip>'),
+)
 
 
 ### setup
@@ -19,67 +38,67 @@ log = util.config_logging(config).getLogger("server")
 app = bottle.Bottle()
 db = util.connection_pool(1, int(config.max_connections or 10), config.db)
 
-def url(*path, **kw):
-    parts = []
-    full = kw.get("full", False)
-    version = kw.get("version", "v1")
-    if full:
-        parts.append("%s://%s" % bottle.request.urlparts[:2])
-    else:
-        parts.append("/")
-    parts.append("api")
-    parts.append(version)
-    parts.extend(map(str, path))
-    return os.path.join(*parts)
-
 
 ### hypermedia helpers
 
+
+def fq_url(*path, **subst):
+    return re.sub(
+        r'<([^:>]+)[^>]*>',
+        r'{\1}',
+        urllib.basejoin(
+            "{scheme}://{netloc}".format(
+                scheme=bottle.request.urlparts.scheme,
+                netloc=bottle.request.urlparts.netloc),
+            os.path.join(*path))
+    ).format(**subst)
 
 def href(url, **kw):
     return dict(kw, href=url)
 
 def index_links(data):
-    data.update(_links={
-        "self": href(bottle.request.url),
-        "index": href(url("index", full=True)),
-        "venues": href(
-            url("venues", full=True),
-            parameters=["zip", "key_category", "location", "radius"]
+    data.setdefault("_links", {}).update(
+        self = href(bottle.request.url),
+        index = href(fq_url(ep.index)),
+        venues = href(
+            fq_url(ep.venues),
+            params=["zip", "key_category", "location", "radius"]
         ),
-        "categories": href(url("categories", full=True)),
-        "zips": href(url("zips", full=True)),
-    })
+        categories = href(fq_url(ep.categories)),
+        zips = href(fq_url(ep.zips))
+    )
     return data
 
 def venue_links(data):
-    data.update(_links={
-        "self": href(url("venues", data['id'], full=True)),
-        "category": href(url("categories", data['key_category'], full=True)),
-        "zip": href(url("zips", data['zip'], full=True)),
-    })
+    data.setdefault("_links", {}).update(
+        self = href(fq_url(ep.venue, id_venue=data['id'])),
+        category = href(fq_url(ep.category, id_category=data['key_category'])),
+        zip = href(fq_url(ep.zip, id_zip=data['zip']))
+    )
     return data
 
 def category_links(data):
-    data.update(_links={
-        "self": href(url("categories", data['id'], full=True)),
-        "venues": href(url("categories", data['id'], "venues", full=True)),
-    })
+    data.setdefault("_links", {}).update(
+        self = href(fq_url(ep.category, id_category=data['id'])),
+        category_venues = href(fq_url(ep.category_venues, id_category=data['id']))
+    )
     return data
 
 def zip_links(data):
-    data.update(_links={
-        "self": href(url("zips", data['zip'], full=True)),
-        "venues": href(url("zips", data['zip'], "venues", full=True)),
-    })
+    data.setdefault("_links", {}).update(
+        self = href(fq_url(ep.zip, id_zip=data['zip'])),
+        zip_venues = href(fq_url(ep.zip_venues, id_zip=data['zip']))
+    )
     return data
 
+def links(data, item_linker, name=None):
+    return index_links(
+        {name: map(item_linker, data)} if name
+        else item_linker(data[0])
+    )
 
-def links(name, items, item_linker):
-    return index_links({
-        name: map(item_linker, items),
-    })
-
+def if_none(value, if_none):
+    return if_none if value is None else None
 
 
 ### query builder
@@ -117,25 +136,30 @@ class Query:
 ### routes
 
 
-@app.route(url('categories'))
-@app.route(url('categories/<id:int>'))
+@app.route(ep.categories)
+@app.route(ep.category)
 @db
-def categories(db, id=None):
+def categories(db, id_category=None):
     q = Query(db, """
         select id, name
         from venue.category
         where 1 = 1
     """)
-    q.add("and id = %s", id)
-    return json.dumps(links("categories", q(id), category_links))
+    q.add("and id = %(id)s", id_category)
+    return json.dumps(
+        links(
+            q(id=id_category),
+            category_links,
+            if_none(id_category, "categories"))
+    )
 
 
-@app.route(url('venues'))
-@app.route(url('venues/<id_venue:int>'))
-@app.route(url('categories/<id_category:int>/venues'))
-@app.route(url('zips/<zip>/venues'))
+@app.route(ep.venues)
+@app.route(ep.venue)
+@app.route(ep.category_venues)
+@app.route(ep.zip_venues)
 @db
-def venues(db, id_venue=None, id_category=None, zip=None):
+def venues(db, id_venue=None, id_category=None, id_zip=None):
     q = Query(db, """
         select v.id, v.name, v.zip, v.address, v.phone, v.key_category
              , ST_AsGeoJSON(v.loc) as location
@@ -146,11 +170,11 @@ def venues(db, id_venue=None, id_category=None, zip=None):
     """)
     q.add("and v.id = %(id_venue)s", id_venue)
     q.add("and c.id = %(id_category)s", id_category)
-    q.add("and v.zip = %(zip)s", zip)
+    q.add("and v.zip = %(id_zip)s", id_zip)
     q.params.update(
         id_venue=id_venue,
         id_category=id_category,
-        zip=zip
+        id_zip=id_zip
     )
     print bottle.request.query.allitems()
 
@@ -180,24 +204,26 @@ def venues(db, id_venue=None, id_category=None, zip=None):
 
     q.map['location'] = json.loads
     print q.get_sql(), q.params
-    return json.dumps(links("venues", q(), venue_links))
+    return json.dumps(
+        links(q(), venue_links, if_none(id_venue, "venues"))
+    )
 
 
-@app.route(url('zips'))
-@app.route(url('zips/<zip>'))
+@app.route(ep.zips)
+@app.route(ep.zip)
 @db
-def zips(db, zip=None):
-    if zip:
-        zips = [{"zip": zip}]
+def zips(db, id_zip=None):
+    if id_zip:
+        zips = [{"zip": id_zip}]
     else:
         zips = Query(db, """
             select distinct zip from venue.venue
         """)()
-    return json.dumps(links("zips", zips, zip_links))
+    return json.dumps(links(zips, zip_links, if_none(id_zip, "zips")))
 
 
-@app.route(url())
-@app.route(url('index'))
+@app.route(ep.root)
+@app.route(ep.index)
 def index():
     return index_links({})
 
