@@ -1,6 +1,6 @@
 from pprint import pprint
 import string
-
+from operator import itemgetter as get
 
 class cat:
     """
@@ -118,7 +118,25 @@ def split(sep='|', cols=None, proc=string.strip):
             yield row
     return process
 
-def join(sep='\t', cols=None):
+def transform(mapping):
+    """
+    >>> items = [{'a': 1, 'b': 2}, {'a': 3, 'b': 4}]
+    >>> list(transform({'a': 'b', 'b': 'a', 'c': lambda r: r['a']+r['b']})(items))
+    [{'a': 2, 'b': 1, 'c': 3}, {'a': 4, 'b': 3, 'c': 7}}
+    """
+    def process(pipeline):
+        for row in pipeline:
+            if isinstance(mapping, dict):
+                row = dict((col, value(row) if callable(value) else row[value])
+                    for col, value in mapping.items())
+            elif isinstance(mapping, (tuple, list)):
+                row = [value(row) if callable(value) else row[value]
+                    for i,value in enumerate(mapping)]
+            yield row
+
+    return process
+
+def join(sep='\t', cols=None, proc=None, prefix='', suffix=''):
     """
     >>> items = [['a', 'b'], ['c', 'd']]
     >>> list(join(sep=',')(items))
@@ -133,7 +151,13 @@ def join(sep='\t', cols=None):
         for row in pipe:
             if cols:
                 row = [row[col] for col in cols]
-            yield sep.join(row)
+            if proc:
+                row = map(proc, row)
+            yield "{prefix}{line}{suffix}".format(
+                line=sep.join(row),
+                prefix=prefix,
+                suffix=suffix
+            )
     return process
 
 def header(*p):

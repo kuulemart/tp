@@ -49,6 +49,26 @@ create table venue.category
 , name text not null
 );
 
+
+--
+-- area
+--
+
+create schema area;
+
+-- area
+
+create table area.area
+( id bigserial primary key
+, area text not null
+, zip text not null
+, po_name  text not null
+, geom geometry not null
+--, geom geography not null
+--, geom geometry(polygon, 4326) not null
+);
+
+
 --
 -- scraper
 --

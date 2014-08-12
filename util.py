@@ -59,6 +59,33 @@ def config_logging(config):
     return logging
 
 
+def connect(config):
+    conn = psycopg2.connect(config.db, cursor_factory=psycopg2.extras.RealDictCursor)
+    return conn.cursor()
+
+def db_wrapper(dsn, keyword='db', autocommit=True):
+    def wrapper(func):
+        args = inspect.getargspec(func)[0]
+        if keyword not in args:
+            return func
+
+        def wrapped(*p, **kw):
+            conn = psycopg2.connect(dsn, cursor_factory=psycopg2.extras.RealDictCursor)
+            kw[keyword] = conn.cursor()
+            try:
+                result = func(*p, **kw)
+                if autocommit:
+                    conn.commit()
+                return result
+            except:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        return wrapped
+    return wrapper
+
+
 def pool_wrapper(pool, keyword='db', autocommit=True):
     def wrapper(func):
         args = inspect.getargspec(func)[0]
