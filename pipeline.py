@@ -1,3 +1,7 @@
+"""
+Microframework for composing iterator pipelines
+"""
+
 import string
 from StringIO import StringIO
 

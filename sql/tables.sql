@@ -31,7 +31,9 @@ create table venue.venue
 , source_id text not null
 , key_category bigint not null
 , name text not null
-, loc geometry(point, 4326) not null
+--, loc geometry(point, 4326) not null
+, loc geometry not null
+--, loc geography not null
 , zip text not null
 , address text
 , phone text

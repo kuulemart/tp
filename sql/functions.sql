@@ -35,10 +35,13 @@ create or replace function staging.process_venue
 ) returns void
 as
 $$
+    -- transform and upsert venue data from staging
     with
         data as (
             select $1 as source, id as source_id, key_category, name
-                 , ST_SetSRID(ST_Point(lng, lat), 4326)::geometry as loc, zip, address, phone
+                 --, ST_SetSRID(ST_Point(lng, lat), 4326)::geometry as loc
+                 , ST_Point(lng, lat) as loc
+                 , zip, address, phone
             from staging.venue
         ),
         upsert as (

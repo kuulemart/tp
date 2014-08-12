@@ -202,7 +202,8 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
         q.add("""
             and ST_Distance_Sphere(
                     v.loc,
-                    ST_SetSRID(ST_Point(%(lng)s, %(lat)s), 4326)
+                    --ST_SetSRID(ST_Point(%(lng)s, %(lat)s), 4326)
+                    ST_Point(%(lng)s, %(lat)s)
                 ) <= %(radius)s
         """)
         q.params.update(
