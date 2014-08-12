@@ -59,8 +59,7 @@ create schema area;
 -- area
 
 create table area.area
-( id bigserial primary key
-, area text not null
+( area text not null
 , zip text not null
 , po_name  text not null
 , geom geometry not null

@@ -34,3 +34,12 @@ create user :user with password 'salakala';
 grant connect on database :database to :user;
 grant usage on schema venue to :user;
 grant select on all tables in schema venue to :user;
+
+-- grant rights importer user
+\set user importer
+drop user if exists :user;
+create user :user with password 'salakala';
+
+grant connect on database :database to :user;
+grant usage on schema area to :user;
+grant all on all tables in schema area to :user;

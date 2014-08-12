@@ -23,7 +23,6 @@ create or replace function scraper.get_venue_area
 ) returns setof record
 as
 $$
-
     select name, value
     from scraper.venue_area
     where source = $1;
@@ -36,16 +35,31 @@ create or replace function staging.process_venue
 ) returns void
 as
 $$
-    -- remove old records having data in staging
-    delete from venue.venue
-    where source = $1
-      and source_id in (select id from staging.venue);
-
-    -- transform and insert from staging
-    insert into venue.venue
-        (source, source_id, key_category, name, loc, zip, address, phone)
-    select $1, id, key_category, name
-         , ST_SetSRID(ST_Point(lng, lat), 4326), zip, address, phone
-    from staging.venue;
+    with
+        data as (
+            select $1 as source, id as source_id, key_category, name
+                 , ST_SetSRID(ST_Point(lng, lat), 4326)::geometry as loc, zip, address, phone
+            from staging.venue
+        ),
+        upsert as (
+            update venue.venue v
+                set key_category = d.key_category
+                  , name = d.name
+                  , loc = d.loc
+                  , zip = d.zip
+                  , address = d.address
+                  , phone = d.phone
+            from data d
+            where v.source = d.source
+              and v.source_id = d.source_id
+            returning v.*
+        )
+        insert into venue.venue
+            (source, source_id, key_category, name, loc, zip, address, phone)
+        select *
+        from data d
+        where d.source||':'||d.source_id not in (
+            select source||':'||source_id from upsert
+        );
 $$
 language sql security definer;
