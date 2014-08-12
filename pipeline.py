@@ -1,9 +1,13 @@
-from pprint import pprint
 import string
-from operator import itemgetter as get
+from StringIO import StringIO
 
 class cat:
     """
+    Pipe creator
+
+    Initializes pipeline. Other pipeline filters can be attached using pipe.
+    Pipeline filter is callable object having at least one argument for iterator.
+
     >>> p = cat((1,2,3))|foreach(lambda item: item+1)
     >>> p(list)
     [2, 3, 4]
@@ -23,6 +27,10 @@ class cat:
         for func in p:
             res = func(res)
         return res
+
+
+# filters
+
 
 def foreach(func):
     def process(pipe):
@@ -185,6 +193,34 @@ def footer(*p):
         for item in p:
             yield item
     return process
+
+def load_data(db, table, columns=None, clean=True, before=None, after=None):
+    """
+    loads pipeline to table
+
+    db - cursor object
+    table - table name to copy data to
+    columns - table columns to use
+    clean - if true, table is truncated before load
+    before - called before execution without arguments
+    after - called afrer execution without arguments
+    """
+    def process(pipe):
+        try:
+            if before:
+                before()
+            f = StringIO('\n'.join(pipe))
+            if clean:
+                db.execute('truncate table %s' % table)
+            db.copy_from(f, table, columns=columns)
+            if after:
+                after()
+            db.connection.commit()
+        except:
+            db.connection.rollback()
+            raise
+    return process
+
 
 if __name__ == "__main__":
     import doctest

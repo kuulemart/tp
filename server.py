@@ -146,61 +146,6 @@ class Linker:
 linker = Linker()
 
 
-### query builder
-
-
-class Query:
-    """
-    SQL query builder
-
-    Builds sql from given parts
-    """
-
-    def __init__(self, db, sql=None, params=None):
-        """
-        db - database cursor object
-        sql - initial sql part
-        params - initial params value
-        """
-        self.db = db
-        self.sql = []
-        # result row map. when col name is in map, value is replaced with result
-        # of mapping function
-        self.map = {}
-        # query parameters
-        self.params = util.AttrDict(params or {})
-        self.add(sql, sql)
-
-    def add(self, sql, condition=True):
-        """
-        Adds SQL part if condition is True
-        """
-        if condition:
-            self.sql.append(sql)
-        return self
-
-    def get_sql(self):
-        """
-        Returns SQL string
-        """
-        return "\n".join(self.sql)
-
-    def __call__(self, **kw):
-        """
-        Execute SQL with self.params + call params and map result values
-        """
-        params = {}
-        params.update(self.params)
-        params.update(kw)
-        self.db.execute(self.get_sql(), params)
-        result = self.db.fetchall()
-        map(
-            lambda r: r.update((k, f(r[k])) for k,f in self.map.items()),
-            result
-        )
-        return result
-
-
 ### routes
 
 

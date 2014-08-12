@@ -109,12 +109,65 @@ def pool_wrapper(pool, keyword='db', autocommit=True):
     return wrapper
 
 
+
+class Query:
+    """
+    SQL query builder
+
+    Builds sql from given parts
+    """
+
+    def __init__(self, db, sql=None, params=None):
+        """
+        db - database cursor object
+        sql - initial sql part
+        params - initial params value
+        """
+        self.db = db
+        self.sql = []
+        # result row map. when col name is in map, value is replaced with result
+        # of mapping function
+        self.map = {}
+        # query parameters
+        self.params = util.AttrDict(params or {})
+        self.add(sql, sql)
+
+    def add(self, sql, condition=True):
+        """
+        Adds SQL part if condition is True
+        """
+        if condition:
+            self.sql.append(sql)
+        return self
+
+    def get_sql(self):
+        """
+        Returns SQL string
+        """
+        return "\n".join(self.sql)
+
+    def __call__(self, **kw):
+        """
+        Execute SQL with self.params + call params and map result values
+        """
+        params = {}
+        params.update(self.params)
+        params.update(kw)
+        self.db.execute(self.get_sql(), params)
+        result = self.db.fetchall()
+        map(
+            lambda r: r.update((k, f(r[k])) for k,f in self.map.items()),
+            result
+        )
+        return result
+
+
 class PgSQLPoolPlugin(object):
-    '''
+    """
     This plugin passes a pgsql database handle from pool to route callbacks
     that accept a `db` keyword argument. If a callback does not expect
     such a parameter, no connection is made.
-    '''
+    """
 
     name = 'pgsqlpool'
 
@@ -124,9 +177,9 @@ class PgSQLPoolPlugin(object):
         self.autocommit = autocommit
 
     def setup(self, app):
-        '''
+        """
         Make sure that other installed plugins don't affect the same keyword argument.
-        '''
+        """
         for other in app.plugins:
             if not isinstance(other, PgSQLPoolPlugin):
                 continue
