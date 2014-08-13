@@ -4,9 +4,7 @@ Base classes for scrapers
 # -*- coding: utf-8 -*-
 
 import os, imp, glob, inspect, string
-from psycopg2 import connect
-from psycopg2.extras import RealDictCursor
-from util import read_config, config_logging, script_dir
+from util import read_config, config_logging, script_dir, DB
 
 class BaseScraper(object):
     """
@@ -26,16 +24,7 @@ class BaseScraper(object):
     def __init__(self):
         self.config = read_config(self.source_name)
         self.log = config_logging(self.config).getLogger(self.source_name)
-        self.db = None
-
-    def callproc(self, name, params):
-        """
-        Helper function for db function calling
-        """
-        self.log.debug("calling function: %r with params: %s" % (name, params))
-        cur = self.db.cursor()
-        cur.callproc(name, params)
-        return cur.fetchall()
+        self.db = DB.from_config(self.config)
 
     def insert_staging_data(self, data):
         """
@@ -55,14 +44,13 @@ class BaseScraper(object):
         Cleans staging table
         """
         self.log.debug("truncating table: %s" % self.staging_table)
-        cur = self.db.cursor()
-        cur.execute('truncate table %s' % self.staging_table)
+        self.db.truncate(self.staging_table)
 
     def process_staging(self):
         """
         Calls staging db function, defined in staging_func attribute
         """
-        self.callproc(self.staging_func, [self.source_name])
+        self.db.execproc(self.staging_func, [self.source_name])
 
     def get_work(self):
         """
@@ -84,8 +72,6 @@ class BaseScraper(object):
         and calls staging function
         """
         try:
-            self.db = connect(self.config['db'], cursor_factory=RealDictCursor)
-
             for params in self.get_work():
                 self.init_staging()
                 data = self.get_data(**params)
@@ -125,8 +111,8 @@ class BaseVenueScraper(BaseScraper):
         Reads source categories and areas from db. Returns sequence of params
         for every category in every area.
         """
-        categories = self.callproc(self.category_func, [self.source_name])
-        for area in self.callproc(self.area_func, [self.source_name]):
+        categories = self.db.callproc(self.category_func, [self.source_name])
+        for area in self.db.callproc(self.area_func, [self.source_name]):
             for category in categories:
                 yield {
                     "area": area['value'],

@@ -18,8 +18,11 @@ class AttrDict(dict):
         self[name] = value
 
 def script_dir():
-    script = __main__.__file__
-    return os.path.dirname(os.path.abspath(script))
+    try:
+        script = __main__.__file__
+        return os.path.dirname(os.path.abspath(script))
+    except AttributeError:
+        return os.getcwd()
 
 def read_config(section, config_file=None):
     """
@@ -60,10 +63,6 @@ def config_logging(config):
     logging.basicConfig(**params)
     return logging
 
-
-def connect(config):
-    conn = psycopg2.connect(config.db, cursor_factory=psycopg2.extras.RealDictCursor)
-    return conn.cursor()
 
 def db_wrapper(dsn, keyword='db', autocommit=True):
     def wrapper(func):
@@ -111,6 +110,67 @@ def pool_wrapper(pool, keyword='db', autocommit=True):
     return wrapper
 
 
+class DB:
+    def __init__(self, dsn, **kwargs):
+        kwargs.setdefault('cursor_factory', psycopg2.extras.RealDictCursor)
+        self.dsn = dsn
+        self.kwargs = kwargs
+        self._con = None
+
+    @property
+    def con(self):
+        """
+        lazy connect
+        """
+        if not self._con:
+            self._con = psycopg2.connect(self.dsn, **self.kwargs)
+        return self._con
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(config.db)
+
+    def __getattr__(self, name):
+        return getattr(self.con, name)
+
+    def copy_data(self, data, table, columns=None, clean=False):
+        if columns:
+            # get column data from dict
+            data = [[row[col] for con in columns] if isinstance(row, dict) else row
+                for row in data]
+        f = StringIO('\n'.join(map('\t'.join, data)))
+        if clean:
+            self.truncate(table)
+        cur = self.con.cursor()
+        cur.copy_from(f, table, columns=columns)
+
+    def truncate(self, table):
+        return self.execute('truncate table %s' % table)
+
+    def query(self, sql, params=()):
+        cur = self.con.cursor()
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+    select = query
+
+    def execute(self, sql, params=()):
+        cur = self.con.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def queryproc(self, proc, params=()):
+        cur = self.con.cursor()
+        cur.callproc(proc, params)
+        return cur.fetchall()
+
+    callproc = queryproc
+
+    def execproc(self, proc, params=()):
+        cur = self.con.cursor()
+        cur.callproc(proc, params)
+        return cur
+
 
 class Query:
     """
@@ -131,7 +191,7 @@ class Query:
         # of mapping function
         self.map = {}
         # query parameters
-        self.params = util.AttrDict(params or {})
+        self.params = AttrDict(params or {})
         self.add(sql, sql)
 
     def add(self, sql, condition=True):

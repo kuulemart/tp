@@ -24,6 +24,7 @@ ep = util.AttrDict(
     category = os.path.join(api_v1, 'categories/<id_category:int>'),
     venues = os.path.join(api_v1, 'venues'),
     venue = os.path.join(api_v1, 'venues/<id_venue:int>'),
+    venue_nearby = os.path.join(api_v1, 'venues/<id_venue:int>/nearby'),
     category_venues = os.path.join(api_v1, 'categories/<id_category:int>/venues'),
     zip_venues = os.path.join(api_v1, 'zips/<id_zip>/venues'),
     zips = os.path.join(api_v1, 'zips'),
@@ -104,12 +105,16 @@ class Linker:
         },
         "categories": lambda item: {
             "self": href(fq_url(ep.category, id_category=item['id'])),
-            "category_venues": href(fq_url(ep.category_venues, id_category=item['id']))
+            "category_venues": href(fq_url(ep.category_venues, id_category=item['id'])),
         },
         "venues": lambda item: {
             "self": href(fq_url(ep.venue, id_venue=item['id'])),
             "category": href(fq_url(ep.category, id_category=item['key_category'])),
-            "zip": href(fq_url(ep.zip, id_zip=item['zip']))
+            "zip": href(fq_url(ep.zip, id_zip=item['zip'])),
+            "nearby": href(
+                fq_url(ep.venue_nearby, id_venue=item['id']),
+                params=["key_category", "radius", "limit"]
+            ),
         },
     }
 
@@ -146,13 +151,19 @@ class Linker:
 linker = Linker()
 
 
+###  result data formatter
+
+# currently only json is supported
+result = json.dumps
+
+
 ### routes
 
 
 @app.route(ep.categories)
 @app.route(ep.category)
 def categories_handler(db, id_category=None):
-    q = Query(db, """
+    q = util.Query(db, """
         select id, name
         from venue.category
         where 1 = 1
@@ -165,17 +176,21 @@ def categories_handler(db, id_category=None):
         q.add("limit %(limit)s", limit > 0)
         q.params.update(limit=limit)
 
-    return json.dumps(
+    return result(
         linker.categories(q(id=id_category), id_category)
     )
 
+
+@app.route(ep.venue_nearby)
+def venue_nearby_handler(db, id_venue):
+    pass
 
 @app.route(ep.venues)
 @app.route(ep.venue)
 @app.route(ep.category_venues)
 @app.route(ep.zip_venues)
 def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
-    q = Query(db, """
+    q = util.Query(db, """
         select v.id, v.name, v.zip, v.address, v.phone, v.key_category
              , ST_AsGeoJSON(v.loc) as location
              , c.name as category
@@ -219,7 +234,7 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
     # convert location string to json
     q.map['location'] = json.loads
     # return linked data as json
-    return json.dumps(
+    return result(
         linker.venues(
             q(
                 id_venue=id_venue,
@@ -237,7 +252,7 @@ def zips_handler(db, id_zip=None):
     if id_zip:
         zips = [{"zip": id_zip}]
     else:
-        q = Query(db, """
+        q = util.Query(db, """
             select distinct zip from venue.venue
         """)
         # limit results
@@ -246,14 +261,14 @@ def zips_handler(db, id_zip=None):
         q.add("limit %(limit)s", limit > 0)
         q.params.update(limit=limit)
         zips = q()
-    return json.dumps(
+    return result(
         linker.zips(zips, id_zip)
     )
 
 
 @app.route(ep.index)
 def index():
-    return linker.index({})
+    return result(linker.index({}))
 
 
 ### start
