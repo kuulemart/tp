@@ -3,6 +3,7 @@ Base classes for scrapers
 """
 # -*- coding: utf-8 -*-
 
+import os, imp, glob, inspect, string
 from psycopg2 import connect
 from psycopg2.extras import RealDictCursor
 from util import read_config, config_logging
@@ -132,3 +133,28 @@ class BaseVenueScraper(BaseScraper):
                     "category": category['value'],
                     "key_category": category['key_category']
                 }
+
+
+def run_scrapers(limit_sources=None):
+    """
+    Collect and run scrapers
+
+    if limit_names is None, all scrapers will run
+    """
+    for root, dirs, files in os.walk(util.script_dir()):
+        for file_name in glob.fnmatch.filter(files, 'scraper_*.py'):
+            file_path = os.path.join(root, file_name)
+            mod_name = os.path.splitext(file_name)[0]
+            mod = imp.load_source(mod_name, file_path)
+            for (cls_name, cls) in inspect.getmembers(mod, inspect.isclass):
+                if glob.fnmatch.fnmatch(cls_name, 'Scraper*') and\
+                    (not limit_sources or \
+                    (getattr(cls, 'source_name') in limit_sources)):
+                        scraper = cls()
+                        scraper.run()
+
+
+if __name__ == '__main__':
+    config = read_config('scraper')
+    limit_sources = map(string.strip, config.get('limit_sources', '').split(','))
+    run_scrapers(limit_sources)

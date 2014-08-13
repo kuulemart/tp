@@ -11,7 +11,7 @@ import json
 
 # Foursquare venue scraper
 
-class FSVenueScraper(BaseVenueScraper):
+class Scraper_4SQVenues(BaseVenueScraper):
     source_name = '4sq'
 
     def __init__(self):
@@ -81,5 +81,5 @@ class FSVenueScraper(BaseVenueScraper):
 
 
 if __name__ == '__main__':
-    scraper = FSVenueScraper()
+    scraper = Scraper_4SQVenues()
     scraper.run()

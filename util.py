@@ -17,6 +17,9 @@ class AttrDict(dict):
     def __setattr__(self, name, value):
         self[name] = value
 
+def script_dir():
+    script = __main__.__file__
+    return os.path.dirname(os.path.abspath(script))
 
 def read_config(section, config_file=None):
     """
@@ -27,8 +30,7 @@ def read_config(section, config_file=None):
         if len(sys.argv) > 1:
             config_file = sys.argv[1]
         else:
-            script = __main__.__file__
-            path = os.path.dirname(os.path.abspath(script))
+            path = script_dir()
             config_file = os.path.join(path, "config.ini")
     if not os.path.isfile(config_file):
         raise Exception("File %s not found" % config_file)
