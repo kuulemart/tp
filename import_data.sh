@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-./import.py
-./4sq.py
+python import.py
+python import_scraper_area.py

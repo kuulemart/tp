@@ -58,7 +58,7 @@ class Scraper_4SQVenues(BaseVenueScraper):
                 name=venue['name'],
                 lat=loc['lat'],
                 lng=loc['lng'],
-                zip=loc['postalCode'],
+                zip=loc.get('postalCode'),
                 address=' '.join(loc.get('formattedAddress', [])),
                 phone=venue['contact'].get('formattedPhone')
             )

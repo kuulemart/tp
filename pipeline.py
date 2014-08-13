@@ -211,17 +211,18 @@ def load_data(db, table, columns=None, clean=True, before=None, after=None):
     """
     def process(pipe):
         try:
+            cur = db.cursor()
             if before:
                 before()
             f = StringIO('\n'.join(pipe))
             if clean:
-                db.execute('truncate table %s' % table)
-            db.copy_from(f, table, columns=columns)
+                cur.execute('truncate table %s' % table)
+            cur.copy_from(f, table, columns=columns)
             if after:
                 after()
-            db.connection.commit()
+            db.commit()
         except:
-            db.connection.rollback()
+            db.rollback()
             raise
     return process
 

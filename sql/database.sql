@@ -26,6 +26,7 @@ grant execute on all functions in schema staging to :user;
 grant usage on schema scraper to :user;
 grant execute on all functions in schema scraper to :user;
 
+
 -- grant rights to api user
 \set user api
 drop user if exists :user;
@@ -35,11 +36,22 @@ grant connect on database :database to :user;
 grant usage on schema venue to :user;
 grant select on all tables in schema venue to :user;
 
+
 -- grant rights importer user
-\set user importer
+\set user admin
 drop user if exists :user;
 create user :user with password 'salakala';
 
 grant connect on database :database to :user;
+grant usage on schema staging to :user;
+grant all on all tables in schema staging to :user;
+grant all on all sequences in schema staging to :user;
 grant usage on schema area to :user;
 grant all on all tables in schema area to :user;
+grant all on all sequences in schema area to :user;
+grant usage on schema venue to :user;
+grant all on all tables in schema venue to :user;
+grant all on all sequences in schema venue to :user;
+grant usage on schema scraper to :user;
+grant all on all tables in schema scraper to :user;
+grant all on all sequences in schema scraper to :user;

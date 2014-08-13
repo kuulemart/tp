@@ -10,8 +10,9 @@ import re
 import urllib
 import json
 import bottle
-import util
+import bottle_pgpool
 import psycopg2.pool
+import util
 
 
 ### API endpoints
@@ -46,7 +47,7 @@ pool = psycopg2.pool.ThreadedConnectionPool(
 )
 # init bottle
 app = bottle.Bottle()
-app.install(util.PgSQLPoolPlugin(pool))
+app.install(bottle_pgpool.PgSQLPoolPlugin(pool))
 
 
 ### hypermedia helpers
@@ -142,7 +143,10 @@ class Linker:
         def func(data, single=True):
             linker = self._create_linker(self._links[name])
             if not single:
-                return self.index({name: map(linker, data)})
+                return self.index({
+                    name: map(linker, data),
+                    'item_count': len(data),
+                })
             if isinstance(data, (list, tuple)):
                 data = data[0]
             return self.index(linker(data))
@@ -183,7 +187,24 @@ def categories_handler(db, id_category=None):
 
 @app.route(ep.venue_nearby)
 def venue_nearby_handler(db, id_venue):
-    pass
+    params = bottle.request.query.dict
+    print 'params:',params
+    # get venue location as geojson
+    q = util.Query(db, """
+        select ST_AsGeoJSON(loc) as loc
+        from venue.venue
+        where id = %(id_venue)s
+    """)
+    q.map['loc'] = json.loads
+    loc = q(id_venue = id_venue)[0]['loc']
+    print 'loc:',loc
+    coords = map(str, loc["coordinates"])
+    print 'coords:', coords
+    params.update(location = [','.join(coords)])
+    # default radius is 1km
+    params.setdefault('radius', [1000])
+    print 'params:',bottle.request.query.dict
+    return venues_handler(db)#, params=params)
 
 @app.route(ep.venues)
 @app.route(ep.venue)
@@ -202,6 +223,7 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
     q.add("and c.id = %(id_category)s", id_category)
     q.add("and v.zip = %(id_zip)s", id_zip)
 
+    #params = params or bottle.request.query.dict
     params = bottle.request.query
     # zip
     if 'zip' in params:
@@ -277,5 +299,6 @@ def index():
 app.run(
     host=config.address or '0.0.0.0',
     port=config.port or '8080',
-    reloader=config.reloader
+    reloader=config.reloader,
+    debug=True
 )

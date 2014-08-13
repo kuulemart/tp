@@ -35,6 +35,13 @@ create or replace function staging.process_venue
 ) returns void
 as
 $$
+    -- resolve missing zip codes
+    update staging.venue v
+      set zip = a.zip
+    from area.area a
+    where (ST_Contains(a.geom, ST_MakePoint(v.lng, v.lat)))
+      and v.zip is null;
+
     -- transform and upsert venue data from staging
     with
         data as (

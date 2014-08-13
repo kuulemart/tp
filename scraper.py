@@ -1,9 +1,11 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """
 Base classes for scrapers
 """
-# -*- coding: utf-8 -*-
 
-import os, imp, glob, inspect, string
+import os, imp, glob, inspect, string, time
 from util import read_config, config_logging, script_dir, DB
 
 class BaseScraper(object):
@@ -78,6 +80,8 @@ class BaseScraper(object):
                 self.insert_staging_data(data)
                 self.process_staging()
                 self.db.commit()
+                if self.config.sleep:
+                    time.sleep(float(self.config.sleep))
 
         except Exception as e:
             if self.db:

@@ -1,10 +1,10 @@
 import sys, os, logging, __main__
+import json
 import inspect
 from ConfigParser import SafeConfigParser
 import psycopg2
 import psycopg2.pool
 import psycopg2.extras
-from bottle import HTTPResponse, HTTPError
 
 
 class AttrDict(dict):
@@ -224,71 +224,28 @@ class Query:
         return result
 
 
-class PgSQLPoolPlugin(object):
+# geometry object conversions
+
+
+def geojson_to_arr_coord(geojson):
     """
-    This plugin passes a pgsql database handle from pool to route callbacks
-    that accept a `db` keyword argument. If a callback does not expect
-    such a parameter, no connection is made.
+    returns array of coordinates
     """
+    return json.loads(geojson)['coordinates'][0]
 
-    name = 'pgsqlpool'
+def arr_coord_to_area(arr_coord):
+    """
+    converts coordinate array to json containing {sw:..., ne:...}
+    """
+    # convert coordinates to string
+    join = ','.join
+    coords = [map(join, map(str, coord)) for coord in arr_coord]
+    return json.dumps({
+        'sw': coords[0],
+        'ne': coords[2]
+    })
 
-    def __init__(self, pool, keyword='db', autocommit=True):
-        self.pool = pool
-        self.keyword = keyword
-        self.autocommit = autocommit
+def geojson_to_area(geojson):
+    return arr_coord_to_area(geojson_to_coords(geojson))
 
-    def setup(self, app):
-        """
-        Make sure that other installed plugins don't affect the same keyword argument.
-        """
-        for other in app.plugins:
-            if not isinstance(other, PgSQLPoolPlugin):
-                continue
-            if other.keyword == self.keyword:
-                raise PluginError("Found another pgsqlpool plugin with conflicting settings (non-unique keyword).")
 
-    def apply(self, callback, context):
-        # Override global configuration with route-specific values.
-        conf = context['config'].get(self.name) or {}
-        autocommit = conf.get('autocommit', self.autocommit)
-        keyword = conf.get('keyword', self.keyword)
-
-        # Test if the original callback accepts a 'db' keyword.
-        # Ignore it if it does not need a database handle.
-        args = inspect.getargspec(context['callback'])[0]
-        if keyword not in args:
-            return callback
-
-        def wrapper(*args, **kwargs):
-            # Connect to the database
-            conn = None
-            try:
-                conn = self.pool.getconn()
-                cur = conn.cursor()
-            except HTTPResponse, e:
-                raise HTTPError(500, "Database Error", e)
-
-            # Add the connection handle as a keyword argument.
-            kwargs[keyword] = cur
-
-            try:
-                rv = callback(*args, **kwargs)
-                if autocommit:
-                    conn.commit()
-            except psycopg2.ProgrammingError, e:
-                con.rollback()
-                raise HTTPError(500, "Database Error", e)
-            except HTTPError, e:
-                raise
-            except HTTPResponse, e:
-                if autocommit:
-                    conn.commit()
-                raise
-            finally:
-                if conn:
-                    self.pool.putconn(conn)
-            return rv
-
-        # Replace the route callback with the wrapped one.
-        return wrapper

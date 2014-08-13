@@ -12,7 +12,7 @@ create table staging.venue
 , name text not null
 , lat double precision not null
 , lng double precision not null
-, zip text not null
+, zip text
 , address text
 , phone text
 );
@@ -34,7 +34,7 @@ create table venue.venue
 --, loc geometry(point, 4326) not null
 , loc geometry not null
 --, loc geography not null
-, zip text not null
+, zip text
 , address text
 , phone text
 );
