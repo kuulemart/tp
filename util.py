@@ -229,9 +229,13 @@ class Query:
 
 def geojson_to_arr_coord(geojson):
     """
-    returns array of coordinates
+    converts geojson to array of coordinates
     """
-    return json.loads(geojson)['coordinates'][0]
+    geojson = json.loads(geojson)
+    coords = geojson['coordinates']
+    if geojson['type'] == 'Polygon':
+        coords = coords[0]
+    return coords
 
 def arr_coord_to_area(arr_coord):
     """
@@ -239,13 +243,13 @@ def arr_coord_to_area(arr_coord):
     """
     # convert coordinates to string
     join = ','.join
-    coords = [map(join, map(str, coord)) for coord in arr_coord]
+    coords = map(join, [map(str, coord) for coord in arr_coord])
     return json.dumps({
         'sw': coords[0],
         'ne': coords[2]
     })
 
 def geojson_to_area(geojson):
-    return arr_coord_to_area(geojson_to_coords(geojson))
+    return arr_coord_to_area(geojson_to_arr_coord(geojson))
 
 
