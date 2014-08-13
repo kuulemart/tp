@@ -19,7 +19,7 @@ class Scraper_4SQVenues(BaseVenueScraper):
         Initialises foursquare api library and reads categories
         """
         # init base
-        super(FSVenueScraper, self).__init__()
+        super(Scraper_4SQVenues, self).__init__()
         # create 4sq api wrapper object
         self.fs = foursquare.Foursquare(
             client_id=self.config['client_id'],

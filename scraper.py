@@ -6,7 +6,7 @@ Base classes for scrapers
 import os, imp, glob, inspect, string
 from psycopg2 import connect
 from psycopg2.extras import RealDictCursor
-from util import read_config, config_logging
+from util import read_config, config_logging, script_dir
 
 class BaseScraper(object):
     """
@@ -141,7 +141,8 @@ def run_scrapers(limit_sources=None):
 
     if limit_names is None, all scrapers will run
     """
-    for root, dirs, files in os.walk(util.script_dir()):
+    scrapers = set()
+    for root, dirs, files in os.walk(script_dir()):
         for file_name in glob.fnmatch.filter(files, 'scraper_*.py'):
             file_path = os.path.join(root, file_name)
             mod_name = os.path.splitext(file_name)[0]
@@ -150,11 +151,13 @@ def run_scrapers(limit_sources=None):
                 if glob.fnmatch.fnmatch(cls_name, 'Scraper*') and\
                     (not limit_sources or \
                     (getattr(cls, 'source_name') in limit_sources)):
-                        scraper = cls()
-                        scraper.run()
-
+                        scrapers.add(cls)
+    for scraper in scrapers:
+        scraper().run()
 
 if __name__ == '__main__':
     config = read_config('scraper')
-    limit_sources = map(string.strip, config.get('limit_sources', '').split(','))
+    limit_sources = None
+    if config.limit_sources:
+        limit_sources = map(string.strip, config.limit_sources.split(','))
     run_scrapers(limit_sources)
