@@ -190,6 +190,8 @@ def venues_handler(db, id=None):
         join venue.category c on v.key_category = c.id
         where 1 = 1
     """,)
+    # convert location string to json
+    q.map['location'] = util.geojson_to_lng_lat_dict
     if id:
         q.add("and v.id = %(id)s", params=dict(id=id))
     else:
@@ -221,8 +223,6 @@ def venues_handler(db, id=None):
         limit = int(params.get('limit', config.get('default_limit', 100)))
         q.add("limit %(limit)s", limit > 0)
         q.params.update(limit=limit)
-        # convert location string to json
-        q.map['location'] = util.geojson_to_lng_lat_dict
     # return linked data as json
     return linker.venues(q.first() if id else q())
 
