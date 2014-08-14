@@ -219,14 +219,14 @@ Parameters:
 Response
 --------
 
-Respose is returned as json data. Response format follows [HAL - Hypertext Application Language][hal] representation.
-Main differences is fully qualified url-s as links.
+Respose is returned as json data. Response uses [HAL - Hypertext Application Language][hal] representation for hypermedia.
+Main differences from HAL spec is fully qualified url-s as links.
 
 ### Index
 Each response has index block, containing references to endpoints.
 
 Attributes:
-* ** _links **
+* **_links**
    * **self** - current endpoint
    * **index** - index
    * **venues** - venues
@@ -253,7 +253,7 @@ Example:
 Venue data
 
 Attributes:
-* ** _links **
+* **_links**
    * **index links**
    * **category** - venue category
    * **zip** - venue zip
@@ -307,7 +307,7 @@ Example:
 Category data
 
 Attributes:
-* ** _links **
+* **_links**
    * **index links**
    * **category_venues** - venues in current categoy
 *  **id** - category id
@@ -340,7 +340,7 @@ Example:
 Zip code data
 
 Attributes:
-* ** _links **
+* **_links**
    * **index links**
    * **zip_venues** - venues having current zip code
 *  **zip** - zip code
@@ -366,6 +366,16 @@ Example:
   "zip" : "94301"
 }
 ```
+
+
+TODO
+====
+
+* Automated testing
+* Better exception handling for scraper and api
+* Doc improvements
+* Source code comments and docs
+
 
 [postgis]:http://www.postgis.org/
 [postgresql]:http://www.postgresql.org/
