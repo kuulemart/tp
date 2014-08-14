@@ -1,7 +1,11 @@
+import sys
 from urllib2 import urlopen
 from json import loads
 
-def dict_recurse(data, search, results):
+def dict_recurse(data, search, results=None):
+    # init results on first call
+    if results is None:
+        results = set()
     if isinstance(data, dict):
         for key, value in data.items():
             if key == search:
@@ -11,23 +15,22 @@ def dict_recurse(data, search, results):
     elif isinstance(data, (list, tuple)):
         for value in data:
             dict_recurse(value, search, results)
+    return results
 
 
 def get_hrefs(url, seen=set()):
+    if url in seen:
+        return []
     print url
     seen.add(url)
-    hrefs = set()
     data = loads(urlopen(url, timeout=5).read())
-    dict_recurse(data, 'href', hrefs)
-    result = []
-    for href in hrefs:
-        if not href in seen:
-            result.append(href)
-    return result
+    hrefs = dict_recurse(data, 'href')
+    return [href for href in hrefs if href not in seen]
 
-hrefs = ['http://localhost:8080/api/v1/index']
+
+hrefs = [sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:8080/api/v1/index']
 while hrefs:
-    new = []
-    map(new.extend, map(get_hrefs, hrefs))
+    new = set()
+    map(new.update, map(get_hrefs, hrefs))
     hrefs = new
 

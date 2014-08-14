@@ -10,6 +10,7 @@ Folder content
     * pipeline.py - processing pipeline microframework. used for creating data pipelines
     * import_area_data.py - bayareadata importer
     * process_scraper_area.py - scraper area data generator
+    * crawler.py - simple api link crawler for testing
 * /sql - folder containing database scripts and data
     * database.sql - database creation
     * tables.sql - table structures
