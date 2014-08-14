@@ -101,11 +101,17 @@ class Linker:
         },
         "zips": lambda item: {
             "self": href(fq_url(ep.zip, zip=item['zip'])),
-            "zip_venues": href(fq_url(ep.zip_venues, zip=item['zip']))
+            "zip_venues": href(
+                fq_url(ep.zip_venues, zip=item['zip']),
+                params=["key_category", "location", "radius", "limit"]
+            ),
         },
         "categories": lambda item: {
             "self": href(fq_url(ep.category, id=item['id'])),
-            "category_venues": href(fq_url(ep.category_venues, id=item['id'])),
+            "category_venues": href(
+                fq_url(ep.category_venues, id=item['id']),
+                params=["zip", "location", "radius", "limit"]
+            ),
         },
         "venues": lambda item: {
             "self": href(fq_url(ep.venue, id=item['id'])),
@@ -113,7 +119,7 @@ class Linker:
             "zip": href(fq_url(ep.zip, zip=item['zip'])),
             "nearby": href(
                 fq_url(ep.venue_nearby, id=item['id']),
-                params=["key_category", "radius", "limit"]
+                params=["zip", "key_category", "radius", "limit"]
             ),
         },
     }
@@ -156,7 +162,7 @@ linker = Linker()
 
 
 @get(ep.categories)
-@get(ep.category)
+@get(ep.category, autocommit=1)
 def categories_handler(db, id=None):
     q = util.Query(db, """
         select id, name

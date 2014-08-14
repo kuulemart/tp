@@ -10,5 +10,5 @@ psql postgres -f database.sql
 popd
 
 # import and process inital data
-python import_area_data.py
-python process_scraper_area.py
+python python/import_area_data.py config.ini
+python python/process_scraper_area.py config.ini

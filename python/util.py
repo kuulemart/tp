@@ -1,4 +1,4 @@
-import sys, os, logging, __main__
+import sys, os, logging, __main__, string
 import json
 import inspect
 from ConfigParser import SafeConfigParser
@@ -18,14 +18,40 @@ class AttrDict(dict):
     def __setattr__(self, name, value):
         self[name] = value
 
+    def getint(self, key, default=0):
+        return int(self.get(key, default))
+
+    def getstr(self, key, default=''):
+        return str(self.get(key, default))
+
+    def getfloat(self, key, default=0.0):
+        return float(self.get(key, default))
+
+    def getlist(self, key, default=None, itemtype=None):
+        value = self.get(key, default or [])
+        if isinstance(value, tuple):
+            value = list(value)
+        elif isinstance(value, str):
+            value = map(string.strip, value.split(','))
+        elif not isinstance(value, list):
+            value = [value]
+        if itemtype:
+            value = map(itemtype, value)
+        return value
+
+
 def script_dir():
+    """
+    Current script dir
+    """
     try:
         script = __main__.__file__
         return os.path.dirname(os.path.abspath(script))
     except AttributeError:
         return os.getcwd()
 
-def read_config(section, config_file=None):
+
+def read_config(section, config_file=None, defaults=None):
     """
     Reads config file and returns configuration.
     config file name defaults to config.ini when not given as program arg
@@ -40,7 +66,10 @@ def read_config(section, config_file=None):
         raise Exception("File %s not found" % config_file)
     cp = SafeConfigParser()
     cp.read(config_file)
-    return AttrDict(cp.items(section))
+    config = AttrDict(defaults or {})
+    if cp.has_section(section):
+        config.update(cp.items(section))
+    return config
 
 
 def config_logging(config):
@@ -112,6 +141,9 @@ def pool_wrapper(pool, keyword='db', autocommit=True):
 
 
 class DB:
+    """
+    Database connection helper
+    """
     def __init__(self, dsn, **kwargs):
         kwargs.setdefault('cursor_factory', psycopg2.extras.RealDictCursor)
         self.dsn = dsn
