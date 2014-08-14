@@ -179,7 +179,7 @@ def categories_handler(db, id_category=None):
     # limit results
     if not id_category:
         params = bottle.request.query
-        limit = int(params.get('limit', 100))
+        limit = int(params.get('limit', config.get('default_limit', 100)))
         q.add("limit %(limit)s", limit > 0)
         q.params.update(limit=limit)
 
@@ -191,23 +191,18 @@ def categories_handler(db, id_category=None):
 @app.route(ep.venue_nearby)
 def venue_nearby_handler(db, id_venue):
     params = bottle.request.query.dict
-    print 'params:',params
     # get venue location as geojson
     q = util.Query(db, """
         select ST_AsGeoJSON(loc) as loc
         from venue.venue
         where id = %(id_venue)s
     """)
-    q.map['loc'] = json.loads
+    q.map['loc'] = util.geojson_to_point
     loc = q(id_venue = id_venue)[0]['loc']
-    print 'loc:',loc
-    coords = map(str, loc["coordinates"])
-    print 'coords:', coords
-    params.update(location = [','.join(coords)])
+    params.update(location = [loc])
     # default radius is 1km
     params.setdefault('radius', [1000])
-    print 'params:',bottle.request.query.dict
-    return venues_handler(db)#, params=params)
+    return venues_handler(db)
 
 @app.route(ep.venues)
 @app.route(ep.venue)
@@ -253,11 +248,11 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
         )
     # limit results
     if not id_venue:
-        limit = int(params.get('limit', 100))
+        limit = int(params.get('limit', config.get('default_limit', 100)))
         q.add("limit %(limit)s", limit > 0)
         q.params.update(limit=limit)
     # convert location string to json
-    q.map['location'] = json.loads
+    q.map['location'] = util.geojson_to_lng_lat_dict
     # return linked data as json
     return result(
         linker.venues(
@@ -282,7 +277,7 @@ def zips_handler(db, id_zip=None):
         """)
         # limit results
         params = bottle.request.query
-        limit = int(params.get('limit', 100))
+        limit = int(params.get('limit', config.get('default_limit', 100)))
         q.add("limit %(limit)s", limit > 0)
         q.params.update(limit=limit)
         zips = q()

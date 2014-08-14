@@ -265,4 +265,14 @@ def arr_coord_to_area(arr_coord):
 def geojson_to_area(geojson):
     return arr_coord_to_area(geojson_to_arr_coord(geojson))
 
+def geojson_to_lng_lat_dict(geojson):
+    coords = map(str, geojson_to_arr_coord(geojson))
+    return {
+        "lng": coords[0],
+        "lat": coords[1],
+        "point": ','.join(coords),
+    }
+
+def geojson_to_point(geojson):
+    return ','.join(map(str, geojson_to_arr_coord(geojson)))
 
