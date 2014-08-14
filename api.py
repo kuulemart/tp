@@ -9,7 +9,7 @@ import os
 import re
 import urllib
 import json
-import bottle
+from bottle import install, get, request, response, run
 import bottle_pgpool
 import psycopg2.pool
 import util
@@ -45,9 +45,8 @@ pool = psycopg2.pool.ThreadedConnectionPool(
     dsn=config.db,
     cursor_factory=psycopg2.extras.RealDictCursor
 )
-# init bottle
-app = bottle.Bottle()
-app.install(bottle_pgpool.PgSQLPoolPlugin(pool))
+# install plugin
+install(bottle_pgpool.PgSQLPoolPlugin(pool))
 
 
 ### hypermedia helpers
@@ -63,8 +62,8 @@ def fq_url(*path, **subst):
         r'{\1}',
         urllib.basejoin(
             "{scheme}://{netloc}".format(
-                scheme=bottle.request.urlparts.scheme,
-                netloc=bottle.request.urlparts.netloc),
+                scheme=request.urlparts.scheme,
+                netloc=request.urlparts.netloc),
             os.path.join(*path))
     ).format(**subst)
 
@@ -85,7 +84,7 @@ class Linker:
     #   dict with key = data type and value = function returning dict with links
     _links = {
         "index": lambda item: {
-            "self": href(bottle.request.url),
+            "self": href(request.url),
             "index": href(fq_url(ep.index)),
             "venues": href(
                 fq_url(ep.venues),
@@ -160,15 +159,15 @@ linker = Linker()
 
 # currently only json is supported
 def result(data):
-    bottle.response.content_type = 'application/json; charset=UTF-8'
+    response.content_type = 'application/json; charset=UTF-8'
     return json.dumps(data)
 
 
 ### routes
 
 
-@app.route(ep.categories)
-@app.route(ep.category)
+@get(ep.categories)
+@get(ep.category)
 def categories_handler(db, id_category=None):
     q = util.Query(db, """
         select id, name
@@ -178,7 +177,7 @@ def categories_handler(db, id_category=None):
     q.add("and id = %(id)s", id_category)
     # limit results
     if not id_category:
-        params = bottle.request.query
+        params = request.query
         limit = int(params.get('limit', config.get('default_limit', 100)))
         q.add("limit %(limit)s", limit > 0)
         q.params.update(limit=limit)
@@ -188,9 +187,9 @@ def categories_handler(db, id_category=None):
     )
 
 
-@app.route(ep.venue_nearby)
+@get(ep.venue_nearby)
 def venue_nearby_handler(db, id_venue):
-    params = bottle.request.query.dict
+    params = request.query.dict
     # get venue location as geojson
     q = util.Query(db, """
         select ST_AsGeoJSON(loc) as loc
@@ -204,10 +203,10 @@ def venue_nearby_handler(db, id_venue):
     params.setdefault('radius', [1000])
     return venues_handler(db)
 
-@app.route(ep.venues)
-@app.route(ep.venue)
-@app.route(ep.category_venues)
-@app.route(ep.zip_venues)
+@get(ep.venues)
+@get(ep.venue)
+@get(ep.category_venues)
+@get(ep.zip_venues)
 def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
     q = util.Query(db, """
         select v.id, v.name, v.zip, v.address, v.phone, v.key_category
@@ -221,8 +220,8 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
     q.add("and c.id = %(id_category)s", id_category)
     q.add("and v.zip = %(id_zip)s", id_zip)
 
-    #params = params or bottle.request.query.dict
-    params = bottle.request.query
+    #params = params or request.query.dict
+    params = request.query
     # zip
     if 'zip' in params:
         q.add("and v.zip = any(%(zip_arr)s)")
@@ -266,8 +265,8 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
     )
 
 
-@app.route(ep.zips)
-@app.route(ep.zip)
+@get(ep.zips)
+@get(ep.zip)
 def zips_handler(db, id_zip=None):
     if id_zip:
         zips = [{"zip": id_zip}]
@@ -276,7 +275,7 @@ def zips_handler(db, id_zip=None):
             select distinct zip from venue.venue
         """)
         # limit results
-        params = bottle.request.query
+        params = request.query
         limit = int(params.get('limit', config.get('default_limit', 100)))
         q.add("limit %(limit)s", limit > 0)
         q.params.update(limit=limit)
@@ -286,7 +285,7 @@ def zips_handler(db, id_zip=None):
     )
 
 
-@app.route(ep.index)
+@get(ep.index)
 def index():
     return result(linker.index({}))
 
@@ -294,7 +293,7 @@ def index():
 ### start
 
 
-app.run(
+run(
     host=config.address or '0.0.0.0',
     port=config.port or '8080',
     reloader=config.reloader,
