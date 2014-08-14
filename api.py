@@ -157,8 +157,11 @@ linker = Linker()
 
 ###  result data formatter
 
+
 # currently only json is supported
-result = json.dumps
+def result(data):
+    bottle.response.content_type = 'application/json; charset=UTF-8'
+    return json.dumps(data)
 
 
 ### routes

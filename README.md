@@ -3,14 +3,37 @@ TP
 
 Setup
 -----
-```sh
-git clone https://github.com/kuulemart/tp.git
-cd tp
-bash setup.sh
-```
+
+### Before setup
+
+Setup expect some components to be installed in your machine
 
 #### PostgreSQL and Postgis
+Postgresql and postgis are expected to be installed and running and your local
+user should have superuser rights. If not, run:
+
+```sh
+sudo apt-get install -y postgresql postgresql-contrib postgis postgresql-9.3-postgis-2.1
+sudo su - postgres
+createuser <your system user name> -s
+<CTRL-D>
+```
+
 #### Python packages
+Python (2.7) and pip is expected to be present in system. If not, run:
+```sh
+sudo apt-get install -y python-pip
+```
+
+Optional virtualenv setup
+```sh
+sudo apt-get install -y python-virtualenv virtualenvwrapper
+source /etc/bash_completion.d/virtualenvwrapper
+mkvirtualenv tp
+```
+
+### Setup process
+
 * [psycopg2]
 * [bottle]
 * [foursquare]
@@ -62,3 +85,5 @@ API
 [foursquare]:http://daringfireball.net/
 [github]:http://github.com
 [hal]:http://stateless.co/hal_specification.html
+[json-view]:https://chrome.google.com/webstore/detail/jsonview/chklaanhfefbnpoihckbnefhakgolnmc
+[json-formatter]:https://github.com/callumlocke/json-formatter
