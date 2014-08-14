@@ -2,6 +2,7 @@ import sys, os, logging, __main__
 import json
 import inspect
 from ConfigParser import SafeConfigParser
+from StringIO import StringIO
 import psycopg2
 import psycopg2.pool
 import psycopg2.extras
@@ -133,16 +134,28 @@ class DB:
     def __getattr__(self, name):
         return getattr(self.con, name)
 
-    def copy_data(self, data, table, columns=None, clean=False):
-        if columns:
-            # get column data from dict
-            data = [[row[col] for con in columns] if isinstance(row, dict) else row
-                for row in data]
-        f = StringIO('\n'.join(map('\t'.join, data)))
-        if clean:
-            self.truncate(table)
-        cur = self.con.cursor()
-        cur.copy_from(f, table, columns=columns)
+    def load_data(self, data, table, columns=None, clean=False, transactional=False):
+        try:
+            if columns:
+                # get column data from dict
+                data = ([row[col] for con in columns] if isinstance(row, dict) else row
+                    for row in data)
+            # join columns
+            data = (row if isinstance(row, str) else '\t'.join(row) for row in data)
+            # join lines and make StringIO object
+            f = StringIO('\n'.join(data))
+            if clean:
+                self.truncate(table)
+            cur = self.cursor()
+            cur.copy_from(f, table, columns=columns)
+            if transactional:
+                self.commit()
+        except:
+            if transactional:
+                self.rollback()
+            raise
+
+    copy_from = load_data
 
     def truncate(self, table):
         return self.execute('truncate table %s' % table)
