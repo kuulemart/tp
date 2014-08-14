@@ -207,12 +207,13 @@ class Query:
         self.params = AttrDict(params or {})
         self.add(sql, sql)
 
-    def add(self, sql, condition=True):
+    def add(self, sql, cond=True, params=None):
         """
         Adds SQL part if condition is True
         """
-        if condition:
+        if cond:
             self.sql.append(sql)
+            params and self.params.update(params)
         return self
 
     def get_sql(self):
@@ -221,7 +222,7 @@ class Query:
         """
         return "\n".join(self.sql)
 
-    def __call__(self, **kw):
+    def execute(self, **kw):
         """
         Execute SQL with self.params + call params and map result values
         """
@@ -235,6 +236,15 @@ class Query:
             result
         )
         return result
+
+    __call__ = execute
+
+    def first(self, **kw):
+        result = self.execute(**kw)
+        if result:
+            return result[0]
+        else:
+            return {}
 
 
 # geometry object conversions

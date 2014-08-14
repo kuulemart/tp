@@ -21,15 +21,15 @@ import util
 api_v1 = '/api/v1'
 ep = util.AttrDict(
     index = os.path.join(api_v1, 'index'),
-    categories = os.path.join(api_v1, 'categories'),
-    category = os.path.join(api_v1, 'categories/<id_category:int>'),
     venues = os.path.join(api_v1, 'venues'),
-    venue = os.path.join(api_v1, 'venues/<id_venue:int>'),
-    venue_nearby = os.path.join(api_v1, 'venues/<id_venue:int>/nearby'),
-    category_venues = os.path.join(api_v1, 'categories/<id_category:int>/venues'),
-    zip_venues = os.path.join(api_v1, 'zips/<id_zip>/venues'),
+    venue = os.path.join(api_v1, 'venues/<id:int>'),
+    venue_nearby = os.path.join(api_v1, 'venues/<id:int>/nearby'),
+    categories = os.path.join(api_v1, 'categories'),
+    category = os.path.join(api_v1, 'categories/<id:int>'),
+    category_venues = os.path.join(api_v1, 'categories/<id:int>/venues'),
     zips = os.path.join(api_v1, 'zips'),
-    zip = os.path.join(api_v1, 'zips/<id_zip>'),
+    zip = os.path.join(api_v1, 'zips/<zip>'),
+    zip_venues = os.path.join(api_v1, 'zips/<zip>/venues'),
 )
 
 
@@ -100,19 +100,19 @@ class Linker:
             )
         },
         "zips": lambda item: {
-            "self": href(fq_url(ep.zip, id_zip=item['zip'])),
-            "zip_venues": href(fq_url(ep.zip_venues, id_zip=item['zip']))
+            "self": href(fq_url(ep.zip, zip=item['zip'])),
+            "zip_venues": href(fq_url(ep.zip_venues, zip=item['zip']))
         },
         "categories": lambda item: {
-            "self": href(fq_url(ep.category, id_category=item['id'])),
-            "category_venues": href(fq_url(ep.category_venues, id_category=item['id'])),
+            "self": href(fq_url(ep.category, id=item['id'])),
+            "category_venues": href(fq_url(ep.category_venues, id=item['id'])),
         },
         "venues": lambda item: {
-            "self": href(fq_url(ep.venue, id_venue=item['id'])),
-            "category": href(fq_url(ep.category, id_category=item['key_category'])),
-            "zip": href(fq_url(ep.zip, id_zip=item['zip'])),
+            "self": href(fq_url(ep.venue, id=item['id'])),
+            "category": href(fq_url(ep.category, id=item['key_category'])),
+            "zip": href(fq_url(ep.zip, zip=item['zip'])),
             "nearby": href(
-                fq_url(ep.venue_nearby, id_venue=item['id']),
+                fq_url(ep.venue_nearby, id=item['id']),
                 params=["key_category", "radius", "limit"]
             ),
         },
@@ -139,28 +139,17 @@ class Linker:
         """
         Dynamic linker function
         """
-        def func(data, single=True):
+        def func(data):
             linker = self._create_linker(self._links[name])
-            if not single:
+            if isinstance(data, (list, tuple)):
                 return self.index({
                     name: map(linker, data),
                     'item_count': len(data),
                 })
-            if isinstance(data, (list, tuple)):
-                data = data[0]
             return self.index(linker(data))
         return func
 
 linker = Linker()
-
-
-###  result data formatter
-
-
-# currently only json is supported
-def result(data):
-    response.content_type = 'application/json; charset=UTF-8'
-    return json.dumps(data)
 
 
 ### routes
@@ -168,46 +157,25 @@ def result(data):
 
 @get(ep.categories)
 @get(ep.category)
-def categories_handler(db, id_category=None):
+def categories_handler(db, id=None):
     q = util.Query(db, """
         select id, name
         from venue.category
         where 1 = 1
     """)
-    q.add("and id = %(id)s", id_category)
-    # limit results
-    if not id_category:
+    if id:
+        q.add("and id = %(id)s", params=dict(id=id))
+    else:
+        # limit results
         params = request.query
         limit = int(params.get('limit', config.get('default_limit', 100)))
-        q.add("limit %(limit)s", limit > 0)
-        q.params.update(limit=limit)
+        q.add("limit %(limit)s", limit > 0, params=dict(limit=limit))
+    return linker.categories(q.first() if id else q())
 
-    return result(
-        linker.categories(q(id=id_category), id_category)
-    )
-
-
-@get(ep.venue_nearby)
-def venue_nearby_handler(db, id_venue):
-    params = request.query.dict
-    # get venue location as geojson
-    q = util.Query(db, """
-        select ST_AsGeoJSON(loc) as loc
-        from venue.venue
-        where id = %(id_venue)s
-    """)
-    q.map['loc'] = util.geojson_to_point
-    loc = q(id_venue = id_venue)[0]['loc']
-    params.update(location = [loc])
-    # default radius is 1km
-    params.setdefault('radius', [1000])
-    return venues_handler(db)
 
 @get(ep.venues)
 @get(ep.venue)
-@get(ep.category_venues)
-@get(ep.zip_venues)
-def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
+def venues_handler(db, id=None):
     q = util.Query(db, """
         select v.id, v.name, v.zip, v.address, v.phone, v.key_category
              , ST_AsGeoJSON(v.loc) as location
@@ -215,61 +183,80 @@ def venues_handler(db, id_venue=None, id_category=None, id_zip=None):
         from venue.venue v
         join venue.category c on v.key_category = c.id
         where 1 = 1
-    """)
-    q.add("and v.id = %(id_venue)s", id_venue)
-    q.add("and c.id = %(id_category)s", id_category)
-    q.add("and v.zip = %(id_zip)s", id_zip)
-
-    #params = params or request.query.dict
-    params = request.query
-    # zip
-    if 'zip' in params:
-        q.add("and v.zip = any(%(zip_arr)s)")
-        q.params["zip_arr"] = params['zip'].split(',')
-    # category
-    if 'key_category' in params:
-        q.add("and v.key_category = any(%(key_category_arr)s)")
-        q.params["key_category_arr"] = map(int, params['key_category'].split(','))
-    # location & radius
-    if 'location' in params and 'radius' in params:
-        location = params['location'].split(',')
-        q.add("""
-            and ST_Distance_Sphere(
-                    v.loc,
-                    --ST_SetSRID(ST_Point(%(lng)s, %(lat)s), 4326)
-                    ST_Point(%(lng)s, %(lat)s)
-                ) <= %(radius)s
-        """)
-        q.params.update(
-            lng=float(location[0]),
-            lat=float(location[1]),
-            radius=float(params['radius'])
-        )
-    # limit results
-    if not id_venue:
+    """,)
+    if id:
+        q.add("and v.id = %(id)s", params=dict(id=id))
+    else:
+        params = request.query
+        # zip filter
+        if 'zip' in params:
+            q.add("and v.zip = any(%(zip_arr)s)")
+            q.params["zip_arr"] = str(params['zip']).split(',')
+        # category filter
+        if 'key_category' in params:
+            q.add("and v.key_category = any(%(key_category_arr)s)")
+            q.params["key_category_arr"] = map(int, str(params['key_category']).split(','))
+        # location & radius filter
+        if 'location' in params and 'radius' in params:
+            location = params['location'].split(',')
+            q.add("""
+                and ST_Distance_Sphere(
+                        v.loc,
+                        --ST_SetSRID(ST_Point(%(lng)s, %(lat)s), 4326)
+                        ST_Point(%(lng)s, %(lat)s)
+                    ) <= %(radius)s
+            """)
+            q.params.update(
+                lng=float(location[0]),
+                lat=float(location[1]),
+                radius=float(params['radius'])
+            )
+        # limit results
         limit = int(params.get('limit', config.get('default_limit', 100)))
         q.add("limit %(limit)s", limit > 0)
         q.params.update(limit=limit)
-    # convert location string to json
-    q.map['location'] = util.geojson_to_lng_lat_dict
+        # convert location string to json
+        q.map['location'] = util.geojson_to_lng_lat_dict
     # return linked data as json
-    return result(
-        linker.venues(
-            q(
-                id_venue=id_venue,
-                id_category=id_category,
-                id_zip=id_zip
-            ),
-            id_venue
-        )
-    )
+    return linker.venues(q.first() if id else q())
+
+
+@get(ep.venue_nearby)
+def venue_nearby_handler(db, id):
+    params = request.query.dict
+    # get venue location as geojson
+    q = util.Query(db, """
+        select ST_AsGeoJSON(loc) as loc
+        from venue.venue
+        where id = %(id)s
+    """)
+    q.map['loc'] = util.geojson_to_point
+    loc = q(id = id)[0]['loc']
+    params.update(location = [loc])
+    # default radius is 1km
+    params.setdefault('radius', [1000])
+    return venues_handler(db)
+
+
+@get(ep.category_venues)
+def category_venues_handler(db, id):
+    params = request.query.dict
+    params.update(key_category=[id])
+    return venues_handler(db)
+
+
+@get(ep.zip_venues)
+def zip_venues_handler(db, zip):
+    params = request.query.dict
+    params.update(zip=[zip])
+    return venues_handler(db)
 
 
 @get(ep.zips)
 @get(ep.zip)
-def zips_handler(db, id_zip=None):
-    if id_zip:
-        zips = [{"zip": id_zip}]
+def zips_handler(db, zip=None):
+    if zip:
+        data = {"zip": zip}
     else:
         q = util.Query(db, """
             select distinct zip from venue.venue
@@ -278,16 +265,13 @@ def zips_handler(db, id_zip=None):
         params = request.query
         limit = int(params.get('limit', config.get('default_limit', 100)))
         q.add("limit %(limit)s", limit > 0)
-        q.params.update(limit=limit)
-        zips = q()
-    return result(
-        linker.zips(zips, id_zip)
-    )
+        data = q(limit=limit)
+    return linker.zips(data)
 
 
 @get(ep.index)
 def index():
-    return result(linker.index({}))
+    return linker.index({})
 
 
 ### start
