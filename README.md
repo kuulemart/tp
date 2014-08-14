@@ -18,7 +18,7 @@ Folder content
 * /. - root folder contains help, import data and bash scripts for setup and running
     * README.md - this document
     * bayareadata.gz - bay area zip area polygons
-    * install.sh - package install script
+    * install_packages.sh - package install script
     * setup.sh - application setup
     * run_scraper.sh - starts scrapers
     * run_api_server.sh - starts api server
@@ -62,7 +62,7 @@ Install packages
 All application python packages can be installed with single command:
 
 ```sh
-./install.sh
+./install_packages.sh
 ```
 
 Script installs following packages:
