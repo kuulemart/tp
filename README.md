@@ -1,5 +1,64 @@
-Folder content
+Overview
+========
+The aim of this project is to design and create database for venue data, build 
+venue scrapers and expose data through RESTful API interface.
+
+
+Host platform
+-------------
+All componets are built and tested on Ubuntu Server 14.04
+
+
+Database
+--------
+PostgresSQL 9.3.5 with Postgis 2.1 extension is used. Database contains tables
+for holding venue data, staging tables for data import and scraper configurations.
+
+Database functions are used to provide simple API interface for scrapers. Scraper,
+api and importers have all different accounts with different access rights in
+database.
+
+
+Data Processors
+---------------
+Import data and perform misc data processing tasks
+
+* import_area_data.py - imports bayarea data from file
+* process_scraper_area.py - builds scraping area data from imported bay area zip polygons
+
+Processors use custom pipeline library for simple and reusable workflow logic.
+
+
+Scrapers
+-------------
+Scrapers collect data from external sources and import to database. Scrapers have
+base classes for reuseable and extendable logic. scraper.py has logic to discover
+and execute implemented scrapers. To be discovered, all scraper implementations
+should have scraper_* prefix in file, Scraper* prefix in class name and run method
+
+* scraper.py - contains scraper base classes and discovers and runs scrapers
+* scraper_4sq_venues.py - foursquare venue scraper
+
+Foursquare venue scraper uses [recommended][foursquare-libraries] [python-foursquare]
+library for foursquare API access.
+
+
+API Server
+----------
+RESTful API server
+
+* api.py - RESTful API server
+
+Uses fast and simple [python-bottle] web framework. Only json content-type results 
+are currently supported.
+
+
+
+Setup and usage
 ===============
+
+Folder content
+--------------
 
 * /python - folder containing python code
     * util.py - utilities and helpers library
@@ -26,17 +85,15 @@ Folder content
     * config.ini - configuration file. Contains sections for all components
 
 
-Setup and usage
-===============
-
 Before setup
 ------------
-
 Setup expect some components to be installed in your machine
 
 #### PostgreSQL and Postgis
 Postgresql and postgis are expected to be installed and running and your local
-user should have superuser rights. If not, run:
+user should have superuser rights. If not, run: Scraper,
+api and importers have all different accounts with different access rights in
+database.
 
 ```sh
 sudo apt-get install -y postgresql postgresql-contrib postgis postgresql-9.3-postgis-2.1
@@ -46,20 +103,20 @@ createuser <your system user name> -s
 ```
 
 #### Python packages
-Python (2.7) and pip is expected to be present in system. If not, run:
+Python (2.7) and pip is expected to be present in system. To install pip, run:
 ```sh
 sudo apt-get install -y python-pip
 ```
 
-Optional virtualenv setup
+Optionally virtualenv can be installed:
 ```sh
 sudo apt-get install -y python-virtualenv virtualenvwrapper
 source /etc/bash_completion.d/virtualenvwrapper
 mkvirtualenv tp
 ```
 
-Install packages
-----------------
+Packages installation
+---------------------
 All application python packages can be installed with single command:
 
 ```sh
@@ -69,19 +126,23 @@ All application python packages can be installed with single command:
 Script installs following packages:
 
 * [psycopg2] - postgresql access library
-* [bottle] - simple web framework
-* [foursquare] - [recommended][foursquare-libraries] foursquare api client
+* [python-bottle] - web framework
+* [python-foursquare] - foursquare api client
 
-Packages are described in pip requirements file and can be installed manually by running:
+Installable packages are described in pip requirements file and can be installed manually by running:
 
 ```sh
 pip install -r requirements.txt
 ```
 
-pip needs additional packages libpq-dev and python-dev to build [psycopg2]
+pip needs additional packages libpq-dev and python-dev to build [psycopg2]:
+
+```sh
+sudo apt-get install -y libpq-dev python-dev
+```
 
 
-Setup database
+Database setup
 --------------
 Database setup can be performed with single command:
 
@@ -89,7 +150,9 @@ Database setup can be performed with single command:
 ./setup.sh
 ```
 
-Script executes database scripts from sql folder, imports bayareadata and builds scraper area data using bayareadata
+Script executes database scripts from sql folder, imports bayareadata and builds 
+scraper area data using bayareadata
+
 
 Run scraper
 -----------
@@ -99,6 +162,9 @@ For foursquare venue data scraping, run:
 ./run_scraper.sh
 ```
 
+Script executes scrapers runner scraper.py.
+
+
 Run API server
 --------------
 After venue data is loaded, run api server:
@@ -107,43 +173,25 @@ After venue data is loaded, run api server:
 ./run_api_server.sh
 ```
 
-Now point your browser to:
+Script executes api.py, the RESTful API server.
+
+
+Usage
+-----
+API starting point is url:
 
 ```
 http://<hostname>:8080/api/v1/index
 ```
 
-For best viewing experience in browser, json formatter plugin sucn as [json-view] or [json-formatter] is recommended
+For commandline, use curl:
+```sh
+curl http://<hostname>:8080/api/v1/index
+```
 
+For best viewing experience use browser with json formatter plugin such as 
+[json-view] or [json-formatter]
 
-Components
-==========
-
-Data Processors
----------------
-Import data and perform misc data processing tasks
-
-* import_area_data.py - imports bayarea data from file
-* process_scraper_area.py - builds scraping area data from imported bay area zip polygons
-
-Processor components use pipeline library for simple and reusable workflow
-
-Scrapers
--------------
-Collect data from external sources and import to database
-
-* scraper.py - contains scraper base classes and discovers and runs scrapers
-* scraper_4sq_venues.py - foursquare venue scraper
-
-Foursquare venue scraper uses python [foursquare] library for foursquare API access.
-
-API Server
-----------
-RESTful API server
-
-* api.py - RESTful API server
-
-Uses python [bottle] library. Only json content-type is currently supported.
 
 
 API
@@ -151,9 +199,7 @@ API
 
 Endpoints
 ---------
-
 All parameters are optional, unless otherwise indicated.
-
 Default limit=100 applies to all set returning endpoints. Default limit can be set in config.
 
 ### GET /api/v1/index
@@ -217,11 +263,12 @@ Parameters:
 * **radius** - radius in meters from specified venue
 * **limit** - max number of items to return
 
+
 Response
 --------
-
-Respose is returned as json data. Response uses [HAL - Hypertext Application Language][hal] representation for hypermedia.
-Main differences from HAL spec is fully qualified url-s as links.
+Respose is returned as json data with hypermedia links to related data.
+Response format is inspired by [HAL - Hypertext Application Language][hal]
+representation. Main differences from HAL spec is fully qualified url-s.
 
 ### Index
 Each response has index block, containing references to endpoints.
@@ -235,6 +282,7 @@ Attributes:
    * **zips** - zip codes
 
 Example:
+
 ```json
 { "categories" : { "href" : "http://vm:8080/api/v1/categories",
       "params" : [ "limit" ]
@@ -369,20 +417,33 @@ Example:
 ```
 
 
+Issues
+======
+Issues and problems faced during design and implementation:
+
+* environment setup - I had older and unsupported ubuntu version with broken packages. Had to
+install new version first
+* gis world was unfamiliar - all about spatial data, types, functions etc. lat/lng vs lng/lat
+srid-s, geometry vs geography.
+* foursquare api - getting access to api, max 50 results limit
+
 TODO
 ====
+For the future:
 
-* Automated testing
-* Better exception handling for scraper and api
-* Doc improvements
+* Automated unit and regression tests. Currently only tests implemented are simple
+crawler that validates api links and some doctests.
+* Better exception handling for scraper and api - api input validation and improved
+result code logic. More robust scrapers, so data errors won't break whole scraping process
+* Doc improvements - documents could always be improved
 * Source code comments and docs
 
 
 [postgis]:http://www.postgis.org/
 [postgresql]:http://www.postgresql.org/
 [psycopg2]:http://initd.org/psycopg
-[bottle]:https://github.com/defnull/bottle
-[foursquare]:https://github.com/mLewisLogic/foursquare
+[python-foursquare]:https://github.com/mLewisLogic/foursquare
+[python-bottle]:http://github.com/defnull/bottle
 [github]:http://github.com
 [hal]:http://stateless.co/hal_specification.html
 [json-view]:https://chrome.google.com/webstore/detail/jsonview/chklaanhfefbnpoihckbnefhakgolnmc
