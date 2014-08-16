@@ -9,11 +9,10 @@ import os
 import re
 import urllib
 import json
-from bottle import install, get, request, response, run
+from bottle import install, get, request, response, run, HTTPError
 import bottle_pgpool
 import psycopg2.pool
 import util
-
 
 ### API endpoints
 
@@ -49,7 +48,7 @@ pool = psycopg2.pool.ThreadedConnectionPool(
 install(bottle_pgpool.PgSQLPoolPlugin(pool))
 
 
-### hypermedia helpers
+###  helpers
 
 
 def fq_url(*path, **subst):
@@ -73,6 +72,23 @@ def href(url, **attrs):
     Builds hypermedia reference with href url and attributes
     """
     return dict(attrs, href=url)
+
+
+def get_limit():
+    """
+    Result item count limit.
+    If not specified in query, set it to default (100). Should be less or equal
+    than max_limit (100)
+    """
+    return min(
+        int(request.query.getone('limit', config.getint('default_limit', 100))),
+        config.getint('max_limit', 100)
+    )
+
+
+def http_assert(is_true, *p, **kw):
+    if not is_true:
+        raise HTTPError(*p, **kw)
 
 
 class Linker:
@@ -146,11 +162,13 @@ class Linker:
         Dynamic linker function
         """
         def func(data):
+            http_assert(data is not None, 404, 'Not found')
             linker = self._create_linker(self._links[name])
             if isinstance(data, (list, tuple)):
                 return self.index({
                     name: map(linker, data),
                     'item_count': len(data),
+                    'limit': get_limit()
                 })
             return self.index(linker(data))
         return func
@@ -169,14 +187,14 @@ def categories_handler(db, id=None):
         from venue.category
         where 1 = 1
     """)
-    if id:
+    if id is not None:
         q.add("and id = %(id)s", params=dict(id=id))
+        data = q.first()
     else:
         # limit results
-        params = request.query
-        limit = int(params.get('limit', config.get('default_limit', 100)))
-        q.add("limit %(limit)s", limit > 0, params=dict(limit=limit))
-    return linker.categories(q.first() if id else q())
+        q.add("limit %(limit)s", params=dict(limit=get_limit()))
+        data = q()
+    return linker.categories(data)
 
 
 @get(ep.venues)
@@ -192,8 +210,9 @@ def venues_handler(db, id=None):
     """,)
     # convert location string to json
     q.map['location'] = util.geojson_to_lng_lat_dict
-    if id:
+    if id is not None:
         q.add("and v.id = %(id)s", params=dict(id=id))
+        data = q.first()
     else:
         params = request.query
         # zip filter
@@ -220,11 +239,10 @@ def venues_handler(db, id=None):
                 radius=float(params['radius'])
             )
         # limit results
-        limit = int(params.get('limit', config.get('default_limit', 100)))
-        q.add("limit %(limit)s", limit > 0)
-        q.params.update(limit=limit)
+        q.add("limit %(limit)s", params=dict(limit=get_limit()))
+        data = q()
     # return linked data as json
-    return linker.venues(q.first() if id else q())
+    return linker.venues(data)
 
 
 @get(ep.venue_nearby)
@@ -237,7 +255,9 @@ def venue_nearby_handler(db, id):
         where id = %(id)s
     """)
     q.map['loc'] = util.geojson_to_point
-    loc = q(id = id)[0]['loc']
+    row = q.first(id = id)
+    http_assert(row, 404, 'Not found')
+    loc = row['loc']
     params.update(location = [loc])
     # default radius is 1km
     params.setdefault('radius', [1000])
@@ -261,17 +281,15 @@ def zip_venues_handler(db, zip):
 @get(ep.zips)
 @get(ep.zip)
 def zips_handler(db, zip=None):
-    if zip:
+    if zip is not None:
         data = {"zip": zip}
     else:
         q = util.Query(db, """
             select distinct zip from venue.venue
         """)
         # limit results
-        params = request.query
-        limit = int(params.get('limit', config.get('default_limit', 100)))
-        q.add("limit %(limit)s", limit > 0)
-        data = q(limit=limit)
+        q.add("limit %(limit)s", params=dict(limit=get_limit()))
+        data = q()
     return linker.zips(data)
 
 
@@ -287,5 +305,5 @@ run(
     host=config.address or '0.0.0.0',
     port=config.port or '8080',
     reloader=config.reloader,
-    debug=True
+    #debug=True
 )

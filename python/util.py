@@ -170,7 +170,7 @@ class DB:
         try:
             if columns:
                 # get column data from dict
-                data = ([row[col] for con in columns] if isinstance(row, dict) else row
+                data = ([row[col] for col in columns] if isinstance(row, dict) else row
                     for row in data)
             # join columns
             data = (row if isinstance(row, str) else '\t'.join(row) for row in data)
@@ -276,7 +276,7 @@ class Query:
         if result:
             return result[0]
         else:
-            return {}
+            return None
 
 
 # geometry object conversions
