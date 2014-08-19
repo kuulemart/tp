@@ -5,32 +5,51 @@ Microframework for composing iterator pipelines
 import string
 from StringIO import StringIO
 
-class cat:
+class Pipe(object):
     """
     Pipe creator
 
     Initializes pipeline. Other pipeline filters can be attached using pipe.
     Pipeline filter is callable object having at least one argument for iterator.
 
-    >>> p = cat((1,2,3))|foreach(lambda item: item+1)
-    >>> p(list)
+    >>> cat << (1,2,3) | foreach(lambda item: item+1) > list
+    [2, 3, 4]
+    >>> Pipe((1,2,3)).join(foreach(lambda item: item+1)).apply(list)
     [2, 3, 4]
     """
-    def __init__(self, pipe):
-        self.pipe = iter(pipe)
+    def __init__(self, pipe=None):
+        self.pipe = pipe
+        if self.pipe:
+            self.pipe = iter(pipe)
 
-    def __or__(self, right):
+    def join(self, right):
+        if not self.pipe:
+            return Pipe(right)
         self.pipe = right(self.pipe)
         return self
+
+    __or__ = join
 
     def __iter__(self):
         return self.pipe
 
-    def __call__(self, *p):
+    def apply(self, *p):
         res = self.pipe
         for func in p:
             res = func(res)
         return res
+
+    # self > other
+    __gt__ = apply
+
+    def __call__(self, pipe):
+        return Pipe(pipe)
+
+    # self << other
+    __lshift__ = __call__
+
+
+cat = Pipe()
 
 
 # filters
@@ -133,8 +152,9 @@ def split(sep='|', cols=None, proc=string.strip):
 def transform(mapping):
     """
     >>> items = [{'a': 1, 'b': 2}, {'a': 3, 'b': 4}]
-    >>> list(transform({'a': 'b', 'b': 'a', 'c': lambda r: r['a']+r['b']})(items))
-    [{'a': 2, 'b': 1, 'c': 3}, {'a': 4, 'b': 3, 'c': 7}}
+    >>> res = list(transform({'a': 'b', 'b': 'a', 'c': lambda r: r['a']+r['b']})(items))
+    >>> cmp(res, [{'a': 2, 'b': 1, 'c': 3}, {'a': 4, 'b': 3, 'c': 7}])
+    0
     """
     def process(pipeline):
         for row in pipeline:
